@@ -1,0 +1,198 @@
+================================================================
+BeReal Data Export — Reconstruction Notes
+================================================================
+
+This document describes the parts of the BeReal data export that
+matter for reconstructing your BeReals as importable photos, and
+lays out a few build options.
+
+
+----------------------------------------------------------------
+1. WHAT'S IN THIS FOLDER (and what we care about)
+----------------------------------------------------------------
+
+Key files for reconstruction
+----------------------------
+
+posts.json        1,212 entries. One per BeReal you ever posted.
+                  This is the primary source of truth for rebuilding.
+
+memories.json     Same 1,212 entries, same timestamps. Duplicate of
+                  posts.json with slightly clearer field names
+                  (frontImage / backImage instead of secondary /
+                  primary). Either file works; we use posts.json.
+
+Photos/bereal/    280 image files = 140 BeReal pairs.
+                  Covers 2022-07-08 -> 2022-11-24.
+                  Mixed format: 75 .jpg + 65 .webp.
+                  Filenames look like:
+                    d2cdeec7-e18e-4166-a00f-aba9e915f785-1657272804.jpg
+                  (UUID + Unix timestamp; "-secondary" suffix marks
+                  the front-camera shot.)
+
+Photos/post/      2,141 image files ≈ 1,072 BeReal pairs.
+                  Covers 2022-11-25 -> 2025-04-20.
+                  All .webp.
+                  Filenames are short random IDs, e.g.
+                    2m7OJZqbD1bgsYas.webp
+
+Why two folders? It's a single clean cutover on 2022-11-25 when
+BeReal migrated their storage backend. Before that date every
+post is in bereal/; after, every post is in post/. The JSON tells
+us which folder to look in for each entry, so we don't need to
+guess.
+
+Coverage check: of 2,424 image paths referenced in posts.json,
+2,421 exist on disk. 3 are missing (so 3 BeReals will have one
+camera unavailable -- those will be skipped with a warning).
+3 files on disk are orphaned (likely deleted posts) -- ignored.
+
+Files we don't need for this task
+---------------------------------
+
+Photos/profile/        your profile pictures (6 files)
+Photos/realmoji/       reaction selfies (4,232 files)
+realmojis.json         metadata for the above
+comments.json          comments on posts
+friends.json           friend list
+friend-requests.json   pending requests
+blocked-users.json     blocks
+conversations/         DM history
+user.json              your account info
+push-*.json, terms.json  account/admin metadata
+
+
+----------------------------------------------------------------
+2. THE FIELDS WE USE (from posts.json)
+----------------------------------------------------------------
+
+Each entry in posts.json looks like:
+
+  {
+    "primary":   { "path": "...", "width": 1500, "height": 2000, ... },
+    "secondary": { "path": "...", "width": 1500, "height": 2000, ... },
+    "takenAt":   "2022-07-08T09:33:33.729Z",
+    "retakeCounter": 0,
+    "visibility": ["friends"],
+    "caption":   "...",            (optional)
+    "location":  { "latitude": ..., "longitude": ... },   (optional)
+    "isLate":    true / false,      (optional)
+    "berealMoment": "...Z"          (optional; the official
+                                     notification time that day)
+  }
+
+Mapping to the photos:
+
+  primary    = BACK camera  = the main shot (the big background
+                              in the classic BeReal composite)
+  secondary  = FRONT camera = the selfie (small inset, top-left)
+
+The path field looks like "/Photos/<user-id>/post/2m7OJZqbD1bgsYas.webp".
+Locally we ignore the user-id prefix and just use the last two
+segments -- e.g. Photos/post/2m7OJZqbD1bgsYas.webp.
+
+Timestamp: takenAt is ISO-8601 UTC, millisecond precision. This is
+what we stamp into filenames and EXIF.
+
+Location: lat/lon in decimal degrees when available. Many posts
+have no location -- handle as optional.
+
+
+----------------------------------------------------------------
+3. RECONSTRUCTION OPTIONS
+----------------------------------------------------------------
+
+All options below:
+  - read posts.json
+  - load both images per entry from Photos/bereal/ or Photos/post/
+  - write EXIF DateTimeOriginal from takenAt so the photos sort
+    correctly on the right date in iCloud / Google Photos
+  - write EXIF GPS tags from location when present
+  - write the caption into EXIF ImageDescription when present
+  - name files like:  2023-08-14_18-32-05_bereal.jpg
+  - tool of choice: Python + Pillow (handles WebP and JPEG
+    natively, ~150 lines total)
+
+What differs between options is the visual layout.
+
+
+Option A -- Classic BeReal (recommended)
+-----------------------------------------
+Recreate the look of the app: back camera fills the frame,
+front camera is a small rounded-corner inset in the top-left
+with a thin white border.
+
+  +-----------------------+
+  | [front]               |
+  |                       |
+  |                       |
+  |       back camera     |
+  |                       |
+  |                       |
+  +-----------------------+
+
+Pros: looks like a BeReal; one file per post.
+Cons: the selfie is small -- detail in the front shot is lost
+      compared to viewing it standalone.
+
+
+Option B -- Side by side
+-------------------------
+Both cameras at equal size, stitched horizontally (or stacked
+vertically). One file per post.
+
+  +-----------+-----------+
+  |           |           |
+  |   back    |   front   |
+  |           |           |
+  +-----------+-----------+
+
+Pros: both shots fully visible; great for browsing.
+Cons: doesn't look like a BeReal; wide aspect ratio is awkward
+      in phone photo apps.
+
+
+Option C -- Two separate files per BeReal
+------------------------------------------
+No compositing. For each post, output two files:
+  2023-08-14_18-32-05_bereal_back.jpg
+  2023-08-14_18-32-05_bereal_front.jpg
+
+Pros: full resolution preserved for both shots; simplest code;
+      photo apps will group them by timestamp.
+Cons: 2x the file count (~2,400 photos); no single "BeReal"
+      artifact.
+
+
+Option D -- Classic composite + originals
+------------------------------------------
+Option A plus Option C: you get the nice BeReal-style composite
+for browsing, plus the originals at full resolution for archive.
+
+Pros: best of both worlds.
+Cons: ~3x file count (~3,600 photos); uses more disk.
+
+
+Recommended default
+-------------------
+Option A. It matches what BeReal would have given you, looks
+correct in any photo app, sorts by timestamp on the right date,
+carries GPS so the map view works, and keeps the file count
+sensible (one photo per BeReal, ~1,212 files).
+
+If disk space isn't a concern and you want the originals too,
+go with Option D.
+
+
+----------------------------------------------------------------
+4. OPEN CHOICES TO CONFIRM BEFORE BUILDING
+----------------------------------------------------------------
+
+1. Layout: A (classic) / B (side-by-side) / C (separate) / D (both)
+2. Output folder: flat, or grouped by year (2022/, 2023/, ...) ?
+3. Output format: JPEG (universal) or keep WebP where possible
+   (smaller, but some photo apps still don't handle it well)?
+4. Embed caption in EXIF ImageDescription? (yes / no)
+5. Embed GPS coordinates when present? (yes / no -- recommend yes)
+6. Include "late" / retake indicators in the filename or caption?
+   (e.g. _late suffix when isLate is true)
