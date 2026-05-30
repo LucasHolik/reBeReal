@@ -12,7 +12,7 @@ from PIL import Image
 
 from rebereal.config import Config
 from rebereal.layouts import ComposedImage, Layout, get_layout
-from rebereal.media import resolve
+from rebereal.media import resolve, scale_image
 from rebereal.metadata import (
     CompositeMetadataWriter,
     ExifWriter,
@@ -165,6 +165,7 @@ class Reconstructor:
 
     def _write_image(self, image: Image.Image, out_path: Path, post: Post) -> None:
         buf = BytesIO()
+        image = scale_image(image, self.config.resolution_scale)
         pil_format = IMAGE_FORMATS[self.config.image_format.lower()]
         save_kwargs = {
             "format": pil_format,
@@ -186,6 +187,14 @@ def build(config: Config, parser_name: str = "posts_json") -> Reconstructor:
         raise ValueError(
             f"unsupported image_format {config.image_format!r}; "
             f"supported: {sorted(IMAGE_FORMATS)}"
+        )
+    if not 0 < config.resolution_scale <= 1.0:
+        raise ValueError(
+            f"resolution_scale must be in (0, 1.0], got {config.resolution_scale}"
+        )
+    if not 1 <= config.jpeg_quality <= 100:
+        raise ValueError(
+            f"jpeg_quality must be in [1, 100], got {config.jpeg_quality}"
         )
     try:
         parser_factory = PARSERS[parser_name]

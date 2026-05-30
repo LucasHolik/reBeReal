@@ -67,6 +67,8 @@ class AppWindow(tk.Tk):
         self.var_embed_gps = tk.BooleanVar(value=True)
         self.var_embed_caption = tk.BooleanVar(value=True)
         self.var_overwrite = tk.BooleanVar(value=False)
+        self.var_resolution = tk.DoubleVar(value=1.0)
+        self.var_jpeg_quality = tk.IntVar(value=80)
         self.var_progress = tk.DoubleVar(value=0.0)
         self.var_status = tk.StringVar(value="Idle.")
 
@@ -97,6 +99,29 @@ class AppWindow(tk.Tk):
         ttk.Checkbutton(opts, text="Embed GPS", variable=self.var_embed_gps).pack(side="left", padx=4)
         ttk.Checkbutton(opts, text="Embed caption", variable=self.var_embed_caption).pack(side="left", padx=4)
         ttk.Checkbutton(opts, text="Overwrite existing", variable=self.var_overwrite).pack(side="left", padx=4)
+
+        quality = ttk.Frame(self)
+        quality.pack(fill="x", **pad)
+
+        ttk.Label(quality, text="Resolution:").pack(side="left", padx=4)
+        res_value = ttk.Label(quality, width=5)
+        res_scale = ttk.Scale(
+            quality,
+            from_=0.01,
+            to=1.0,
+            variable=self.var_resolution,
+            orient="horizontal",
+            length=180,
+            command=lambda _v: res_value.configure(text=f"{self.var_resolution.get():.2f}"),
+        )
+        res_scale.pack(side="left", padx=4)
+        res_value.configure(text=f"{self.var_resolution.get():.2f}")
+        res_value.pack(side="left", padx=(0, 12))
+
+        ttk.Label(quality, text="JPEG quality:").pack(side="left", padx=4)
+        ttk.Spinbox(
+            quality, from_=1, to=100, textvariable=self.var_jpeg_quality, width=5
+        ).pack(side="left", padx=4)
 
         buttons = ttk.Frame(self)
         buttons.pack(fill="x", **pad)
@@ -139,6 +164,12 @@ class AppWindow(tk.Tk):
         if not export or not output:
             messagebox.showerror("Missing folders", "Please choose both an export and an output folder.")
             return None
+        try:
+            resolution_scale = round(self.var_resolution.get(), 2)
+            jpeg_quality = self.var_jpeg_quality.get()
+        except tk.TclError:
+            messagebox.showerror("Invalid value", "Resolution and JPEG quality must be numbers.")
+            return None
         return Config(
             export_root=Path(export).expanduser().resolve(),
             output_root=Path(output).expanduser().resolve(),
@@ -146,6 +177,8 @@ class AppWindow(tk.Tk):
             embed_gps=self.var_embed_gps.get(),
             embed_caption=self.var_embed_caption.get(),
             overwrite=self.var_overwrite.get(),
+            resolution_scale=resolution_scale,
+            jpeg_quality=jpeg_quality,
         )
 
     def _on_preview(self) -> None:

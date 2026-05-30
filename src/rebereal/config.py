@@ -19,7 +19,8 @@ class Config:
     layout: str = "classic"
     naming: str = "by_year"
     image_format: str = "jpeg"
-    jpeg_quality: int = 92
+    jpeg_quality: int = 80
+    resolution_scale: float = 1.0
     overwrite: bool = False
     embed_gps: bool = True
     embed_caption: bool = True

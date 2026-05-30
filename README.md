@@ -42,6 +42,14 @@ python -m rebereal --export ./Data --output ./Output
 
 Useful flags: `--layout classic`, `--no-gps`, `--no-caption`, `--overwrite`, `-v`.
 
+Output quality:
+
+- `--resolution` — output size as a fraction of source, `0.01`–`1.0`; keeps
+  aspect ratio (default `1.0` = full source resolution).
+- `--jpeg-quality` — JPEG quality `1`–`100` (default `80`).
+
+Both controls are also available in the GUI.
+
 ## Tests
 
 ```

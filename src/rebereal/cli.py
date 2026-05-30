@@ -23,7 +23,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", type=Path, required=True, help="Output directory for composites")
     p.add_argument("--layout", default="classic", help="Layout strategy name (default: classic)")
     p.add_argument("--naming", default="by_year", help="Naming strategy name (default: by_year)")
-    p.add_argument("--jpeg-quality", type=int, default=92, help="JPEG quality 1-100 (default: 92)")
+    p.add_argument("--jpeg-quality", type=int, default=80, help="JPEG quality 1-100 (default: 80)")
+    p.add_argument(
+        "--resolution",
+        type=float,
+        default=1.0,
+        help="Output resolution as a fraction of source, 0.01-1.0; "
+        "keeps aspect ratio (default: 1.0 = full)",
+    )
     p.add_argument("--overwrite", action="store_true", help="Overwrite existing output files")
     p.add_argument("--no-gps", action="store_true", help="Do not embed GPS EXIF tags")
     p.add_argument("--no-caption", action="store_true", help="Do not embed caption in XMP/IPTC metadata")
@@ -41,6 +48,7 @@ def main(argv: list[str] | None = None) -> int:
         layout=args.layout,
         naming=args.naming,
         jpeg_quality=args.jpeg_quality,
+        resolution_scale=args.resolution,
         overwrite=args.overwrite,
         embed_gps=not args.no_gps,
         embed_caption=not args.no_caption,
@@ -48,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         recon = build(config)
-    except KeyError as e:
+    except (KeyError, ValueError) as e:
         log.error("%s", e)
         return 2
 

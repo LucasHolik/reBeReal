@@ -209,3 +209,12 @@ go with Option D.
    stem when `retakeCounter > 0` (avoids same-second filename
    collisions for retakes). `isLate` / `_late` suffix is not
    yet wired -- out of v1 scope.
+7. Output quality: two knobs, exposed in both the CLI and GUI.
+   - Resolution (`--resolution`, `Config.resolution_scale`): a
+     fraction of the source size, 0.01-1.0, aspect ratio kept.
+     Default 1.0 (full). Applied by downscaling the *finished*
+     composite (via `media/scale_image`) rather than the source
+     frames, so it stays layout-agnostic and supersamples the
+     inset. Capped at 1.0 -- never upscales.
+   - JPEG quality (`--jpeg-quality`, `Config.jpeg_quality`):
+     1-100, default 80. Both ranges are validated in `build()`.
