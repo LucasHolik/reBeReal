@@ -108,7 +108,9 @@ All options below:
   - write EXIF DateTimeOriginal from takenAt so the photos sort
     correctly on the right date in iCloud / Google Photos
   - write EXIF GPS tags from location when present
-  - write the caption into EXIF ImageDescription when present
+  - write the caption into XMP `dc:description` and IPTC
+    `Caption-Abstract` when present (Apple Photos / Google Photos
+    read those, not EXIF ImageDescription)
   - name files like:  2023-08-14_18-32-05_bereal.jpg
   - tool of choice: Python + Pillow (handles WebP and JPEG
     natively, ~150 lines total)
@@ -185,14 +187,25 @@ go with Option D.
 
 
 ----------------------------------------------------------------
-4. OPEN CHOICES TO CONFIRM BEFORE BUILDING
+4. DECISIONS MADE (v1 — see README + src/rebereal/)
 ----------------------------------------------------------------
 
-1. Layout: A (classic) / B (side-by-side) / C (separate) / D (both)
-2. Output folder: flat, or grouped by year (2022/, 2023/, ...) ?
-3. Output format: JPEG (universal) or keep WebP where possible
-   (smaller, but some photo apps still don't handle it well)?
-4. Embed caption in EXIF ImageDescription? (yes / no)
-5. Embed GPS coordinates when present? (yes / no -- recommend yes)
-6. Include "late" / retake indicators in the filename or caption?
-   (e.g. _late suffix when isLate is true)
+1. Layout: A (classic). B / C / D are architected for via the
+   layouts/ plugin registry but not yet implemented.
+2. Output folder: grouped by year (2022/, 2023/, ...) via the
+   `by_year` naming strategy. Alternative strategies drop into
+   src/rebereal/naming/ + register in NAMING_STRATEGIES.
+3. Output format: JPEG. The pipeline now validates
+   `config.image_format` against an IMAGE_FORMATS registry
+   (currently `{"jpeg", "jpg"}`); WebP/PNG entries can be added
+   alongside JPEG-conditional gating in the metadata writers.
+4. Caption: embedded via XMP `dc:description` + IPTC
+   `Caption-Abstract` (Apple/Google photos surface those).
+   Gated by `--no-caption` / `Config.embed_caption`. EXIF
+   `ImageDescription` is intentionally not written.
+5. GPS: embedded via standard EXIF GPS tags when `location`
+   is present (a minority of posts). Gated by `--no-gps`.
+6. Retake indicator: `_r{n}` suffix appended to the filename
+   stem when `retakeCounter > 0` (avoids same-second filename
+   collisions for retakes). `isLate` / `_late` suffix is not
+   yet wired -- out of v1 scope.

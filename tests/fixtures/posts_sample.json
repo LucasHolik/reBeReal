@@ -1,0 +1,30 @@
+[
+  {
+    "primary":   { "bucket": "storage.bere.al", "path": "/Photos/user-123/post/aaaa.webp", "width": 1500, "height": 2000, "mediaType": "image", "mimeType": "image/webp" },
+    "secondary": { "bucket": "storage.bere.al", "path": "/Photos/user-123/post/bbbb.webp", "width": 1500, "height": 2000, "mediaType": "image", "mimeType": "image/webp" },
+    "takenAt":   "2023-08-14T18:32:05.123Z",
+    "retakeCounter": 0,
+    "visibility": ["friends"],
+    "caption":   "hello world",
+    "location":  { "latitude": 48.8566, "longitude": 2.3522 }
+  },
+  {
+    "primary":   { "bucket": "storage.bere.al", "path": "Photos/user-123/bereal/cccc-1657272804.jpg", "width": 1500, "height": 2000, "mediaType": "image" },
+    "secondary": { "bucket": "storage.bere.al", "path": "Photos/user-123/bereal/cccc-1657272804-secondary.jpg", "width": 1500, "height": 2000, "mediaType": "image" },
+    "takenAt":   "2022-07-08T09:33:33.729Z",
+    "retakeCounter": 1,
+    "visibility": ["friends"]
+  },
+  {
+    "primary":   { "bucket": "storage.bere.al", "path": "/Photos/user-123/post/dddd.webp", "width": 1500, "height": 2000, "mediaType": "image" },
+    "secondary": { "bucket": "storage.bere.al", "path": "/Photos/user-123/post/eeee.webp", "width": 1500, "height": 2000, "mediaType": "image" },
+    "takenAt":   "2024-01-01T00:00:00.000Z",
+    "retakeCounter": 0,
+    "visibility": ["friends"],
+    "caption":   "no gps here"
+  },
+  {
+    "primary":   { "path": "" },
+    "takenAt":   "broken"
+  }
+]
