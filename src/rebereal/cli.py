@@ -31,7 +31,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output resolution as a fraction of source, 0.01-1.0; "
         "keeps aspect ratio (default: 1.0 = full)",
     )
-    p.add_argument("--overwrite", action="store_true", help="Overwrite existing output files")
     p.add_argument("--no-gps", action="store_true", help="Do not embed GPS EXIF tags")
     p.add_argument("--no-caption", action="store_true", help="Do not embed caption in XMP/IPTC metadata")
     p.add_argument("-v", "--verbose", action="store_true", help="Enable DEBUG logging")
@@ -49,7 +48,6 @@ def main(argv: list[str] | None = None) -> int:
         naming=args.naming,
         jpeg_quality=args.jpeg_quality,
         resolution_scale=args.resolution,
-        overwrite=args.overwrite,
         embed_gps=not args.no_gps,
         embed_caption=not args.no_caption,
     )
@@ -65,9 +63,10 @@ def main(argv: list[str] | None = None) -> int:
             log.info("progress: %d / %d", done, total)
 
     summary = recon.run(progress_cb=progress)
-    log.info("written=%d existing=%d skipped=%d warnings=%d",
-             summary.written, summary.existing, summary.skipped, len(summary.warnings))
-    return 0 if (summary.written + summary.existing) > 0 else 1
+    log.info("output folder: %s", summary.output_dir)
+    log.info("written=%d skipped=%d warnings=%d",
+             summary.written, summary.skipped, len(summary.warnings))
+    return 0 if summary.written > 0 else 1
 
 
 if __name__ == "__main__":

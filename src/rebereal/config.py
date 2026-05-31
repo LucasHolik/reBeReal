@@ -21,6 +21,5 @@ class Config:
     image_format: str = "jpeg"
     jpeg_quality: int = 80
     resolution_scale: float = 1.0
-    overwrite: bool = False
     embed_gps: bool = True
     embed_caption: bool = True

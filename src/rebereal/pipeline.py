@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from io import BytesIO
 from pathlib import Path
 from typing import Callable
@@ -22,6 +22,7 @@ from rebereal.metadata import (
 )
 from rebereal.models import Post
 from rebereal.naming import NamingStrategy, get_naming
+from rebereal.output_dir import resolve_export_dir
 from rebereal.parsers import PARSERS, PostParser
 
 log = logging.getLogger(__name__)
@@ -41,8 +42,8 @@ class RunSummary:
 
     written: int = 0
     skipped: int = 0
-    existing: int = 0
     warnings: list[str] = field(default_factory=list)
+    output_dir: Path | None = None
 
 
 @dataclass
@@ -78,17 +79,23 @@ class Reconstructor:
         posts_path: Path | None = None,
     ) -> RunSummary:
         """Execute the full reconstruction. Returns a RunSummary."""
-        summary = RunSummary()
+        # Rebase output_root onto a fresh per-run wrapper folder so each run is
+        # self-contained. Resolved once here (not in build/preview) so previewing
+        # never claims a folder name. Reconstructor is single-use.
+        export_dir = resolve_export_dir(self.config.output_root)
+        self.config = replace(self.config, output_root=export_dir)
+        log.info("writing output to: %s", export_dir)
+
+        summary = RunSummary(output_dir=export_dir)
         posts = list(self._load_posts(posts_path))
         total = len(posts)
         log.info("loaded %d posts", total)
 
         for i, post in enumerate(posts, start=1):
             try:
-                wrote, existed = self._process_post(post)
+                wrote = self._process_post(post)
                 summary.written += wrote
-                summary.existing += existed
-                if wrote == 0 and existed == 0:
+                if wrote == 0:
                     summary.skipped += 1
             except _SkipPost as e:
                 log.warning("skipping post %s: %s", post.taken_at.isoformat(), e)
@@ -102,9 +109,8 @@ class Reconstructor:
                 progress_cb(i, total)
 
         log.info(
-            "done: %d written, %d existing, %d skipped",
+            "done: %d written, %d skipped",
             summary.written,
-            summary.existing,
             summary.skipped,
         )
         return summary
@@ -136,8 +142,8 @@ class Reconstructor:
             raise FileNotFoundError(f"posts source not found: {path}")
         return self.parser.parse(path)
 
-    def _process_post(self, post: Post) -> tuple[int, int]:
-        """Process a single post; return (written, existed) counts."""
+    def _process_post(self, post: Post) -> int:
+        """Process a single post; return the number of images written."""
         back_p = resolve(post.back_path, self.config.export_root)
         front_p = resolve(post.front_path, self.config.export_root)
         if not back_p.exists():
@@ -151,17 +157,12 @@ class Reconstructor:
             composed = self.layout.compose(back, front)
 
         written = 0
-        existed = 0
         for item in composed:
             out_path = self.naming.output_path(post, item.suffix, self.config)
-            if out_path.exists() and not self.config.overwrite:
-                log.info("exists, skipping: %s", out_path)
-                existed += 1
-                continue
             out_path.parent.mkdir(parents=True, exist_ok=True)
             self._write_image(item.image, out_path, post)
             written += 1
-        return (written, existed)
+        return written
 
     def _write_image(self, image: Image.Image, out_path: Path, post: Post) -> None:
         buf = BytesIO()

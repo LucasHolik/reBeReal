@@ -40,7 +40,7 @@ sample composites, then **Run** to process the full export.
 python -m rebereal --export ./Data --output ./Output
 ```
 
-Useful flags: `--layout classic`, `--no-gps`, `--no-caption`, `--overwrite`, `-v`.
+Useful flags: `--layout classic`, `--no-gps`, `--no-caption`, `-v`.
 
 Output quality:
 

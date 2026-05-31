@@ -66,7 +66,6 @@ class AppWindow(tk.Tk):
         self.var_layout = tk.StringVar(value="classic")
         self.var_embed_gps = tk.BooleanVar(value=True)
         self.var_embed_caption = tk.BooleanVar(value=True)
-        self.var_overwrite = tk.BooleanVar(value=False)
         self.var_resolution = tk.DoubleVar(value=1.0)
         self.var_jpeg_quality = tk.IntVar(value=80)
         self.var_progress = tk.DoubleVar(value=0.0)
@@ -98,7 +97,6 @@ class AppWindow(tk.Tk):
         opts.pack(fill="x", **pad)
         ttk.Checkbutton(opts, text="Embed GPS", variable=self.var_embed_gps).pack(side="left", padx=4)
         ttk.Checkbutton(opts, text="Embed caption", variable=self.var_embed_caption).pack(side="left", padx=4)
-        ttk.Checkbutton(opts, text="Overwrite existing", variable=self.var_overwrite).pack(side="left", padx=4)
 
         quality = ttk.Frame(self)
         quality.pack(fill="x", **pad)
@@ -176,7 +174,6 @@ class AppWindow(tk.Tk):
             layout=self.var_layout.get(),
             embed_gps=self.var_embed_gps.get(),
             embed_caption=self.var_embed_caption.get(),
-            overwrite=self.var_overwrite.get(),
             resolution_scale=resolution_scale,
             jpeg_quality=jpeg_quality,
         )
@@ -241,9 +238,11 @@ class AppWindow(tk.Tk):
                 s = event.summary
                 assert s is not None
                 self.var_status.set(
-                    f"Done. written={s.written} existing={s.existing} "
+                    f"Done. written={s.written} "
                     f"skipped={s.skipped} warnings={len(s.warnings)}"
                 )
+                if s.output_dir is not None:
+                    self._append_log(f"Output folder: {s.output_dir}")
 
     def _set_busy(self, busy: bool) -> None:
         state = "disabled" if busy else "normal"

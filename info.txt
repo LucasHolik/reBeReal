@@ -192,9 +192,18 @@ go with Option D.
 
 1. Layout: A (classic). B / C / D are architected for via the
    layouts/ plugin registry but not yet implemented.
-2. Output folder: grouped by year (2022/, 2023/, ...) via the
-   `by_year` naming strategy. Alternative strategies drop into
-   src/rebereal/naming/ + register in NAMING_STRATEGIES.
+2. Output folder: each run is wrapped in a fresh folder named
+   `export` (or `export(1)`, `export(2)`, ... if `export` already
+   exists in the chosen output location), resolved once per run by
+   `output_dir.resolve_export_dir`. Inside that wrapper, files are
+   grouped by year (2022/, 2023/, ...) via the `by_year` naming
+   strategy. The wrapper is orthogonal to naming; alternative
+   strategies drop into src/rebereal/naming/ + register in
+   NAMING_STRATEGIES.
+   Because every run targets a fresh folder and retakes are
+   disambiguated by `_r{n}` (see 6), an output path can never
+   collide with a pre-existing file -- so there is no overwrite /
+   skip-existing logic (the former `--overwrite` flag was removed).
 3. Output format: JPEG. The pipeline now validates
    `config.image_format` against an IMAGE_FORMATS registry
    (currently `{"jpeg", "jpg"}`); WebP/PNG entries can be added
