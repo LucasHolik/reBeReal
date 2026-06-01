@@ -227,3 +227,11 @@ go with Option D.
      inset. Capped at 1.0 -- never upscales.
    - JPEG quality (`--jpeg-quality`, `Config.jpeg_quality`):
      1-100, default 80. Both ranges are validated in `build()`.
+8. GUI: a PySide6 / Qt desktop app (src/rebereal/gui/) that wraps the
+   headless core -- it imports the core, never the reverse. The whole
+   interface is styled from a single centralized theme
+   (gui/theme.py -> build_stylesheet(PALETTE)): a pure dark-monochrome
+   palette, the native system UI font with Menlo for numerals/log, and
+   a two-pane window (settings sidebar + preview/log). The palette is
+   one dict, so light / accent variants drop in without touching widget
+   code. PySide6 is an optional extra: `pip install -e ".[dev,gui]"`.

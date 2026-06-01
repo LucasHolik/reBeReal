@@ -20,7 +20,7 @@ All work runs inside the `bereal` conda env:
 
 ```
 conda activate bereal
-pip install -e ".[dev]"
+pip install -e ".[dev,gui]"
 ```
 
 ## Usage
@@ -58,8 +58,8 @@ pytest -q
 
 ## Layout
 
-- `src/rebereal/` — core library (headless; no Tk import).
-- `src/rebereal/gui/` — Tk wrapper; imports core, never the reverse.
+- `src/rebereal/` — core library (headless; no GUI import).
+- `src/rebereal/gui/` — Qt (PySide6) wrapper; imports core, never the reverse.
 - `tests/` — pytest scaffold.
 
 Strategy plugins live under `layouts/`, `parsers/`, `metadata/`, and `naming/`;

@@ -13,8 +13,7 @@ from __future__ import annotations
 
 import queue
 
-from rebereal.gui.app import drain_once
-from rebereal.gui.worker import DoneEvent, ProgressEvent
+from rebereal.gui.worker import DoneEvent, ProgressEvent, drain_once
 
 
 def test_drain_handles_currently_pending_events() -> None:

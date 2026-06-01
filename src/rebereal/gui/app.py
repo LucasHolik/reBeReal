@@ -1,17 +1,38 @@
-"""Tk root window — folder pickers, preview, run, progress, log."""
+"""Qt root window — folder pickers, preview, run, progress, log."""
 
 from __future__ import annotations
 
 import logging
-import queue
-import tkinter as tk
+import sys
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
-from typing import Callable
+
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFontDatabase
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QSlider,
+    QSpinBox,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
 from rebereal.config import Config
 from rebereal.gui.preview import PreviewPane
-from rebereal.gui.worker import DoneEvent, LogEvent, ProgressEvent, Worker
+from rebereal.gui.theme import PALETTE, build_stylesheet
+from rebereal.gui.worker import DoneEvent, LogEvent, ProgressEvent, Worker, drain_once
 from rebereal.layouts import LAYOUTS
 from rebereal.logging_setup import configure
 from rebereal.pipeline import build
@@ -20,162 +41,246 @@ log = logging.getLogger(__name__)
 
 POLL_INTERVAL_MS = 100
 
-
-def drain_once(
-    events_q: "queue.Queue",
-    handler: Callable[[object], None],
-) -> bool:
-    """Drain every currently-pending event into `handler`.
-
-    Returns True iff a `DoneEvent` was observed during this drain. Callers
-    that re-arm polling on `is_running()` would race with the worker thread
-    pushing the final DoneEvent and then exiting — so the caller should keep
-    polling until this function returns True instead.
-    """
-    saw_done = False
-    try:
-        while True:
-            event = events_q.get_nowait()
-            handler(event)
-            if isinstance(event, DoneEvent):
-                saw_done = True
-    except queue.Empty:
-        pass
-    return saw_done
+# Resolution slider works in integer percent (1–100) and maps to 0.01–1.0.
+_RES_MIN = 1
+_RES_MAX = 100
 
 
-class AppWindow(tk.Tk):
+def _section_label(text: str) -> QLabel:
+    label = QLabel(text.upper())
+    label.setObjectName("SectionLabel")
+    return label
+
+
+def _field_label(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setObjectName("FieldLabel")
+    return label
+
+
+def _rule() -> QFrame:
+    rule = QFrame()
+    rule.setObjectName("Rule")
+    rule.setFrameShape(QFrame.Shape.HLine)
+    return rule
+
+
+class AppWindow(QMainWindow):
     """Main reBeReal window."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.title("reBeReal")
-        self.geometry("900x680")
-        self.minsize(720, 560)
+        self.setWindowTitle("reBeReal")
+        self.resize(1040, 700)
+        self.setMinimumSize(880, 600)
 
         self._worker: Worker | None = None
-        self._done_seen: bool = False
-        self._build_vars()
-        self._build_widgets()
+        self._done_seen = False
+        self._timer = QTimer(self)
+        self._timer.setInterval(POLL_INTERVAL_MS)
+        self._timer.timeout.connect(self._drain_events)
 
-    # --- variables / widgets ---------------------------------------------
+        self._build_ui()
 
-    def _build_vars(self) -> None:
-        self.var_export = tk.StringVar()
-        self.var_output = tk.StringVar()
-        self.var_layout = tk.StringVar(value="classic")
-        self.var_embed_gps = tk.BooleanVar(value=True)
-        self.var_embed_caption = tk.BooleanVar(value=True)
-        self.var_resolution = tk.DoubleVar(value=1.0)
-        self.var_jpeg_quality = tk.IntVar(value=80)
-        self.var_progress = tk.DoubleVar(value=0.0)
-        self.var_status = tk.StringVar(value="Idle.")
+    # --- ui ---------------------------------------------------------------
 
-    def _build_widgets(self) -> None:
-        pad = {"padx": 8, "pady": 4}
+    def _build_ui(self) -> None:
+        central = QWidget()
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._build_sidebar())
+        root.addWidget(self._build_content(), 1)
+        self.setCentralWidget(central)
 
-        form = ttk.Frame(self)
-        form.pack(fill="x", **pad)
+    def _build_sidebar(self) -> QWidget:
+        sidebar = QFrame()
+        sidebar.setObjectName("Sidebar")
+        sidebar.setFixedWidth(360)
 
-        ttk.Label(form, text="Export folder:").grid(row=0, column=0, sticky="w")
-        ttk.Entry(form, textvariable=self.var_export, width=70).grid(row=0, column=1, sticky="ew", padx=4)
-        ttk.Button(form, text="Browse…", command=self._pick_export).grid(row=0, column=2)
+        col = QVBoxLayout(sidebar)
+        col.setContentsMargins(24, 24, 24, 24)
+        col.setSpacing(16)
 
-        ttk.Label(form, text="Output folder:").grid(row=1, column=0, sticky="w")
-        ttk.Entry(form, textvariable=self.var_output, width=70).grid(row=1, column=1, sticky="ew", padx=4)
-        ttk.Button(form, text="Browse…", command=self._pick_output).grid(row=1, column=2)
+        wordmark = QLabel("rebereal")
+        wordmark.setObjectName("Wordmark")
+        tagline = QLabel("Rebuild your BeReals as importable photos.")
+        tagline.setObjectName("Tagline")
+        tagline.setWordWrap(True)
+        col.addWidget(wordmark)
+        col.addWidget(tagline)
+        col.addWidget(_rule())
 
-        ttk.Label(form, text="Layout:").grid(row=2, column=0, sticky="w")
-        layout_cb = ttk.Combobox(
-            form, textvariable=self.var_layout, values=sorted(LAYOUTS.keys()), state="readonly", width=20
+        # Folders ----------------------------------------------------------
+        col.addWidget(_section_label("Folders"))
+        self.in_export = QLineEdit()
+        self.in_export.setPlaceholderText("BeReal export folder")
+        col.addLayout(self._folder_row("Export", self.in_export, self._pick_export))
+        self.in_output = QLineEdit()
+        self.in_output.setPlaceholderText("Output folder")
+        col.addLayout(self._folder_row("Output", self.in_output, self._pick_output))
+
+        # Composition ------------------------------------------------------
+        col.addWidget(_section_label("Composition"))
+        comp = QVBoxLayout()
+        comp.setSpacing(4)
+        comp.addWidget(_field_label("Layout"))
+        self.cb_layout = QComboBox()
+        self.cb_layout.addItems(sorted(LAYOUTS.keys()))
+        self.cb_layout.setCurrentText("classic")
+        comp.addWidget(self.cb_layout)
+        col.addLayout(comp)
+
+        # Metadata ---------------------------------------------------------
+        col.addWidget(_section_label("Metadata"))
+        self.chk_gps = QCheckBox("Embed GPS")
+        self.chk_gps.setChecked(True)
+        self.chk_caption = QCheckBox("Embed caption")
+        self.chk_caption.setChecked(True)
+        col.addWidget(self.chk_gps)
+        col.addWidget(self.chk_caption)
+
+        # Quality ----------------------------------------------------------
+        col.addWidget(_section_label("Quality"))
+        col.addLayout(self._build_resolution_row())
+        col.addLayout(self._build_quality_row())
+
+        col.addStretch(1)
+        col.addWidget(_rule())
+
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        self.btn_preview = QPushButton("Preview")
+        self.btn_preview.setObjectName("GhostButton")
+        self.btn_preview.clicked.connect(self._on_preview)
+        self.btn_run = QPushButton("Run")
+        self.btn_run.setObjectName("PrimaryButton")
+        self.btn_run.clicked.connect(self._on_run)
+        actions.addWidget(self.btn_preview)
+        actions.addWidget(self.btn_run, 1)
+        col.addLayout(actions)
+
+        return sidebar
+
+    def _folder_row(self, label: str, line: QLineEdit, handler) -> QVBoxLayout:
+        box = QVBoxLayout()
+        box.setSpacing(4)
+        box.addWidget(_field_label(label))
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addWidget(line, 1)
+        browse = QPushButton("Browse…")
+        browse.setObjectName("GhostButton")
+        browse.clicked.connect(handler)
+        row.addWidget(browse)
+        box.addLayout(row)
+        return box
+
+    def _build_resolution_row(self) -> QVBoxLayout:
+        box = QVBoxLayout()
+        box.setSpacing(4)
+        header = QHBoxLayout()
+        header.addWidget(_field_label("Resolution"))
+        header.addStretch(1)
+        self.lbl_resolution = QLabel("1.00")
+        self.lbl_resolution.setObjectName("ValueReadout")
+        header.addWidget(self.lbl_resolution)
+        box.addLayout(header)
+
+        self.sld_resolution = QSlider(Qt.Orientation.Horizontal)
+        self.sld_resolution.setMinimum(_RES_MIN)
+        self.sld_resolution.setMaximum(_RES_MAX)
+        self.sld_resolution.setValue(_RES_MAX)
+        self.sld_resolution.valueChanged.connect(
+            lambda v: self.lbl_resolution.setText(f"{v / 100:.2f}")
         )
-        layout_cb.grid(row=2, column=1, sticky="w", padx=4)
+        box.addWidget(self.sld_resolution)
+        return box
 
-        form.columnconfigure(1, weight=1)
+    def _build_quality_row(self) -> QVBoxLayout:
+        box = QVBoxLayout()
+        box.setSpacing(4)
+        box.addWidget(_field_label("JPEG quality"))
+        self.spn_quality = QSpinBox()
+        self.spn_quality.setRange(1, 100)
+        self.spn_quality.setValue(80)
+        box.addWidget(self.spn_quality)
+        return box
 
-        opts = ttk.Frame(self)
-        opts.pack(fill="x", **pad)
-        ttk.Checkbutton(opts, text="Embed GPS", variable=self.var_embed_gps).pack(side="left", padx=4)
-        ttk.Checkbutton(opts, text="Embed caption", variable=self.var_embed_caption).pack(side="left", padx=4)
+    def _build_content(self) -> QWidget:
+        content = QWidget()
+        col = QVBoxLayout(content)
+        col.setContentsMargins(24, 24, 24, 24)
+        col.setSpacing(16)
 
-        quality = ttk.Frame(self)
-        quality.pack(fill="x", **pad)
+        splitter = QSplitter(Qt.Orientation.Vertical)
 
-        ttk.Label(quality, text="Resolution:").pack(side="left", padx=4)
-        res_value = ttk.Label(quality, width=5)
-        res_scale = ttk.Scale(
-            quality,
-            from_=0.01,
-            to=1.0,
-            variable=self.var_resolution,
-            orient="horizontal",
-            length=180,
-            command=lambda _v: res_value.configure(text=f"{self.var_resolution.get():.2f}"),
-        )
-        res_scale.pack(side="left", padx=4)
-        res_value.configure(text=f"{self.var_resolution.get():.2f}")
-        res_value.pack(side="left", padx=(0, 12))
+        # Preview ----------------------------------------------------------
+        preview_box = QWidget()
+        pv = QVBoxLayout(preview_box)
+        pv.setContentsMargins(0, 0, 0, 0)
+        pv.setSpacing(12)
+        pv.addWidget(_section_label("Preview"))
+        self.preview_pane = PreviewPane()
+        pv.addWidget(self.preview_pane)
+        pv.addStretch(1)
+        splitter.addWidget(preview_box)
 
-        ttk.Label(quality, text="JPEG quality:").pack(side="left", padx=4)
-        ttk.Spinbox(
-            quality, from_=1, to=100, textvariable=self.var_jpeg_quality, width=5
-        ).pack(side="left", padx=4)
+        # Log --------------------------------------------------------------
+        log_box = QWidget()
+        lv = QVBoxLayout(log_box)
+        lv.setContentsMargins(0, 0, 0, 0)
+        lv.setSpacing(8)
+        lv.addWidget(_section_label("Log"))
+        self.log_view = QPlainTextEdit()
+        self.log_view.setObjectName("LogView")
+        self.log_view.setReadOnly(True)
+        lv.addWidget(self.log_view, 1)
+        splitter.addWidget(log_box)
 
-        buttons = ttk.Frame(self)
-        buttons.pack(fill="x", **pad)
-        self.btn_preview = ttk.Button(buttons, text="Preview", command=self._on_preview)
-        self.btn_preview.pack(side="left", padx=4)
-        self.btn_run = ttk.Button(buttons, text="Run", command=self._on_run)
-        self.btn_run.pack(side="left", padx=4)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        col.addWidget(splitter, 1)
 
-        self.preview_pane = PreviewPane(self)
-        self.preview_pane.pack(fill="x", **pad)
+        # Progress ---------------------------------------------------------
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        col.addWidget(self.progress)
+        self.lbl_status = QLabel("Idle.")
+        self.lbl_status.setObjectName("StatusLabel")
+        col.addWidget(self.lbl_status)
 
-        progress = ttk.Frame(self)
-        progress.pack(fill="x", **pad)
-        ttk.Progressbar(progress, variable=self.var_progress, maximum=100.0).pack(fill="x")
-        ttk.Label(progress, textvariable=self.var_status).pack(anchor="w")
-
-        log_frame = ttk.LabelFrame(self, text="Log")
-        log_frame.pack(fill="both", expand=True, **pad)
-        self.log_text = tk.Text(log_frame, height=12, state="disabled", wrap="none")
-        self.log_text.pack(side="left", fill="both", expand=True)
-        scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
-        scroll.pack(side="right", fill="y")
-        self.log_text.configure(yscrollcommand=scroll.set)
+        return content
 
     # --- callbacks --------------------------------------------------------
 
     def _pick_export(self) -> None:
-        d = filedialog.askdirectory(title="Select BeReal export folder")
+        d = QFileDialog.getExistingDirectory(self, "Select BeReal export folder")
         if d:
-            self.var_export.set(d)
+            self.in_export.setText(d)
 
     def _pick_output(self) -> None:
-        d = filedialog.askdirectory(title="Select output folder")
+        d = QFileDialog.getExistingDirectory(self, "Select output folder")
         if d:
-            self.var_output.set(d)
+            self.in_output.setText(d)
 
     def _make_config(self) -> Config | None:
-        export = self.var_export.get().strip()
-        output = self.var_output.get().strip()
+        export = self.in_export.text().strip()
+        output = self.in_output.text().strip()
         if not export or not output:
-            messagebox.showerror("Missing folders", "Please choose both an export and an output folder.")
-            return None
-        try:
-            resolution_scale = round(self.var_resolution.get(), 2)
-            jpeg_quality = self.var_jpeg_quality.get()
-        except tk.TclError:
-            messagebox.showerror("Invalid value", "Resolution and JPEG quality must be numbers.")
+            QMessageBox.critical(
+                self, "Missing folders", "Please choose both an export and an output folder."
+            )
             return None
         return Config(
             export_root=Path(export).expanduser().resolve(),
             output_root=Path(output).expanduser().resolve(),
-            layout=self.var_layout.get(),
-            embed_gps=self.var_embed_gps.get(),
-            embed_caption=self.var_embed_caption.get(),
-            resolution_scale=resolution_scale,
-            jpeg_quality=jpeg_quality,
+            layout=self.cb_layout.currentText(),
+            embed_gps=self.chk_gps.isChecked(),
+            embed_caption=self.chk_caption.isChecked(),
+            resolution_scale=round(self.sld_resolution.value() / 100, 2),
+            jpeg_quality=self.spn_quality.value(),
         )
 
     def _on_preview(self) -> None:
@@ -188,7 +293,7 @@ class AppWindow(tk.Tk):
             self._append_log("Preview rendered.")
         except Exception as e:
             log.exception("preview failed")
-            messagebox.showerror("Preview failed", str(e))
+            QMessageBox.critical(self, "Preview failed", str(e))
 
     def _on_run(self) -> None:
         if self._worker is not None and self._worker.is_running():
@@ -199,45 +304,44 @@ class AppWindow(tk.Tk):
         try:
             recon = build(config)
         except Exception as e:
-            messagebox.showerror("Configuration error", str(e))
+            QMessageBox.critical(self, "Configuration error", str(e))
             return
 
         self._set_busy(True)
         self._done_seen = False
-        self.var_progress.set(0.0)
-        self.var_status.set("Starting…")
+        self.progress.setValue(0)
+        self.lbl_status.setText("Starting…")
         self._worker = Worker(recon)
         self._worker.start()
-        self.after(POLL_INTERVAL_MS, self._drain_events)
+        self._timer.start()
 
     def _drain_events(self) -> None:
         if self._worker is None:
             return
         if drain_once(self._worker.events, self._handle_event):
             self._done_seen = True
-        # Re-arm based on whether we have seen a DoneEvent, not on thread
-        # liveness — the worker can push DoneEvent and exit between an empty
-        # drain and an is_running() check, which previously stranded the
-        # final event in the queue.
-        if not self._done_seen:
-            self.after(POLL_INTERVAL_MS, self._drain_events)
+        # Stop polling once a DoneEvent has been seen, not on thread liveness —
+        # the worker can push DoneEvent and exit between an empty drain and an
+        # is_running() check, which would otherwise strand the final event.
+        if self._done_seen:
+            self._timer.stop()
 
     def _handle_event(self, event: object) -> None:
         if isinstance(event, ProgressEvent):
-            pct = (event.done / event.total * 100.0) if event.total else 0.0
-            self.var_progress.set(pct)
-            self.var_status.set(f"Processing {event.done} / {event.total}")
+            pct = int(event.done / event.total * 100) if event.total else 0
+            self.progress.setValue(pct)
+            self.lbl_status.setText(f"Processing {event.done} / {event.total}")
         elif isinstance(event, LogEvent):
             self._append_log(event.message)
         elif isinstance(event, DoneEvent):
             self._set_busy(False)
             if event.error is not None:
-                self.var_status.set("Failed.")
-                messagebox.showerror("Run failed", str(event.error))
+                self.lbl_status.setText("Failed.")
+                QMessageBox.critical(self, "Run failed", str(event.error))
             else:
                 s = event.summary
                 assert s is not None
-                self.var_status.set(
+                self.lbl_status.setText(
                     f"Done. written={s.written} "
                     f"skipped={s.skipped} warnings={len(s.warnings)}"
                 )
@@ -245,22 +349,23 @@ class AppWindow(tk.Tk):
                     self._append_log(f"Output folder: {s.output_dir}")
 
     def _set_busy(self, busy: bool) -> None:
-        state = "disabled" if busy else "normal"
-        self.btn_preview.configure(state=state)
-        self.btn_run.configure(state=state)
+        self.btn_preview.setEnabled(not busy)
+        self.btn_run.setEnabled(not busy)
 
     def _append_log(self, message: str) -> None:
-        self.log_text.configure(state="normal")
-        self.log_text.insert("end", message + "\n")
-        self.log_text.see("end")
-        self.log_text.configure(state="disabled")
+        self.log_view.appendPlainText(message)
 
 
 def main() -> int:
     configure()
-    app = AppWindow()
-    app.mainloop()
-    return 0
+    app = QApplication.instance() or QApplication(sys.argv)
+    # Use the platform's real UI font (San Francisco on macOS) so the QSS never
+    # references a CSS keyword Qt can't resolve.
+    app.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont))
+    app.setStyleSheet(build_stylesheet(PALETTE))
+    window = AppWindow()
+    window.show()
+    return app.exec()
 
 
 if __name__ == "__main__":

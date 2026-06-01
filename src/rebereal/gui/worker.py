@@ -6,12 +6,35 @@ import logging
 import queue
 import threading
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from rebereal.logging_setup import CallbackHandler
 from rebereal.pipeline import Reconstructor, RunSummary
 
 log = logging.getLogger(__name__)
+
+
+def drain_once(
+    events_q: "queue.Queue",
+    handler: Callable[[object], None],
+) -> bool:
+    """Drain every currently-pending event into `handler`.
+
+    Returns True iff a `DoneEvent` was observed during this drain. Callers
+    that re-arm polling on `is_running()` would race with the worker thread
+    pushing the final DoneEvent and then exiting — so the caller should keep
+    polling until this function returns True instead.
+    """
+    saw_done = False
+    try:
+        while True:
+            event = events_q.get_nowait()
+            handler(event)
+            if isinstance(event, DoneEvent):
+                saw_done = True
+    except queue.Empty:
+        pass
+    return saw_done
 
 
 @dataclass
@@ -37,9 +60,9 @@ Event = ProgressEvent | LogEvent | DoneEvent
 class Worker:
     """Run `Reconstructor.run` on a background thread.
 
-    Events are pushed to `self.events` and consumed by the Tk main loop via
-    `root.after(...)`. The worker installs a log handler that forwards records
-    onto the same queue so the GUI sees a unified event stream.
+    Events are pushed to `self.events` and consumed on the Qt main thread by a
+    `QTimer` that polls `drain_once`. The worker installs a log handler that
+    forwards records onto the same queue so the GUI sees a unified event stream.
     """
 
     def __init__(self, reconstructor: Reconstructor) -> None:
@@ -83,5 +106,5 @@ class Worker:
 
 
 # Re-exported for clarity in callers that need to type-check event handlers.
-__all__: list[str] = ["Worker", "ProgressEvent", "LogEvent", "DoneEvent", "Event"]
+__all__: list[str] = ["Worker", "ProgressEvent", "LogEvent", "DoneEvent", "Event", "drain_once"]
 _ = Any
