@@ -44,6 +44,7 @@ class RunSummary:
     skipped: int = 0
     warnings: list[str] = field(default_factory=list)
     output_dir: Path | None = None
+    cancelled: bool = False
 
 
 @dataclass
@@ -77,8 +78,14 @@ class Reconstructor:
         self,
         progress_cb: ProgressCallback | None = None,
         posts_path: Path | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> RunSummary:
-        """Execute the full reconstruction. Returns a RunSummary."""
+        """Execute the full reconstruction. Returns a RunSummary.
+
+        `should_cancel`, if given, is polled before each post; once it returns
+        True the loop stops and the summary is flagged `cancelled`. Files already
+        written stay on disk — the caller decides whether to keep them.
+        """
         # Rebase output_root onto a fresh per-run wrapper folder so each run is
         # self-contained. Resolved once here (not in build/preview) so previewing
         # never claims a folder name. Reconstructor is single-use.
@@ -92,6 +99,10 @@ class Reconstructor:
         log.info("loaded %d posts", total)
 
         for i, post in enumerate(posts, start=1):
+            if should_cancel is not None and should_cancel():
+                log.info("run cancelled at %d/%d posts", i - 1, total)
+                summary.cancelled = True
+                break
             try:
                 wrote = self._process_post(post)
                 summary.written += wrote

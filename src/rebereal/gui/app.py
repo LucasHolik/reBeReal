@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -47,7 +49,7 @@ from rebereal.gui.worker import (
 from rebereal.ingest import ExportNotFound
 from rebereal.layouts import LAYOUTS
 from rebereal.logging_setup import configure
-from rebereal.pipeline import build
+from rebereal.pipeline import RunSummary, build
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +69,13 @@ def _section_label(text: str) -> QLabel:
 def _field_label(text: str) -> QLabel:
     label = QLabel(text)
     label.setObjectName("FieldLabel")
+    return label
+
+
+def _hint_label(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setObjectName("HintLabel")
+    label.setWordWrap(True)
     return label
 
 
@@ -163,6 +172,39 @@ class AppWindow(QMainWindow):
         col.addWidget(wordmark)
         col.addWidget(_rule())
 
+        # All editable settings live in one panel so a run can disable + dim them
+        # wholesale (see _set_busy) while the Cancel button below stays live.
+        self._settings_panel = self._build_settings_panel()
+        self._settings_opacity = QGraphicsOpacityEffect(self._settings_panel)
+        self._settings_opacity.setOpacity(1.0)
+        self._settings_panel.setGraphicsEffect(self._settings_opacity)
+        col.addWidget(self._settings_panel)
+
+        col.addStretch(1)
+        col.addWidget(_rule())
+
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        self.btn_restart = QPushButton("Restart")
+        self.btn_restart.setObjectName("GhostButton")
+        self.btn_restart.clicked.connect(self._restart)
+        # One button toggles between Run (idle) and Cancel (running); see
+        # _on_run_button / _set_run_button_mode.
+        self.btn_run = QPushButton("Run")
+        self.btn_run.setObjectName("PrimaryButton")
+        self.btn_run.clicked.connect(self._on_run_button)
+        actions.addWidget(self.btn_restart)
+        actions.addWidget(self.btn_run, 1)
+        col.addLayout(actions)
+
+        return sidebar
+
+    def _build_settings_panel(self) -> QWidget:
+        panel = QWidget()
+        col = QVBoxLayout(panel)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(12)
+
         # Source -----------------------------------------------------------
         # Read-only: the loaded export is chosen on the landing page. To pick a
         # different one the user hits Restart (below).
@@ -212,22 +254,7 @@ class AppWindow(QMainWindow):
         col.addLayout(self._build_resolution_row())
         col.addLayout(self._build_quality_row())
 
-        col.addStretch(1)
-        col.addWidget(_rule())
-
-        actions = QHBoxLayout()
-        actions.setSpacing(8)
-        self.btn_restart = QPushButton("Restart")
-        self.btn_restart.setObjectName("GhostButton")
-        self.btn_restart.clicked.connect(self._restart)
-        self.btn_run = QPushButton("Run")
-        self.btn_run.setObjectName("PrimaryButton")
-        self.btn_run.clicked.connect(self._on_run)
-        actions.addWidget(self.btn_restart)
-        actions.addWidget(self.btn_run, 1)
-        col.addLayout(actions)
-
-        return sidebar
+        return panel
 
     def _folder_row(self, label: str, line: QLineEdit, handler) -> QVBoxLayout:
         box = QVBoxLayout()
@@ -268,12 +295,22 @@ class AppWindow(QMainWindow):
     def _build_quality_row(self) -> QVBoxLayout:
         box = QVBoxLayout()
         box.setSpacing(4)
-        box.addWidget(_field_label("JPEG quality"))
+        box.addWidget(_field_label("JPEG quality (1–100)"))
         self.spn_quality = QSpinBox()
         self.spn_quality.setRange(1, 100)
         self.spn_quality.setValue(80)
+        self.spn_quality.setToolTip(
+            "1–100. Past ~85 the quality gain is hard to see, "
+            "but the file size keeps climbing."
+        )
         self.spn_quality.valueChanged.connect(lambda *_: self._schedule_preview())
         box.addWidget(self.spn_quality)
+        box.addWidget(
+            _hint_label(
+                "Higher isn't always visibly better — past ~85 the quality gain "
+                "is hard to see but the file size keeps climbing."
+            )
+        )
         return box
 
     def _build_content(self) -> QWidget:
@@ -391,8 +428,14 @@ class AppWindow(QMainWindow):
     # --- preview ----------------------------------------------------------
 
     def _schedule_preview(self) -> None:
-        """Debounced refresh — only once a source is loaded."""
+        """Debounced refresh — only once a source is loaded.
+
+        Dim the current strip immediately (before the debounce elapses) so a
+        setting change visibly registers instead of looking like a no-op.
+        """
         if self._export_root is not None:
+            self.preview_pane.set_pending()
+            self.lbl_status.setText("Updating preview…")
             self._preview_timer.start()
 
     def _render_preview(self) -> None:
@@ -407,6 +450,7 @@ class AppWindow(QMainWindow):
                 scale=config.resolution_scale,
                 jpeg_quality=config.jpeg_quality,
             )
+            self.lbl_status.setText("Preview updated.")
             self._append_log("Preview rendered.")
         except Exception as e:
             log.exception("preview failed")
@@ -446,6 +490,13 @@ class AppWindow(QMainWindow):
             jpeg_quality=self.spn_quality.value(),
         )
 
+    def _on_run_button(self) -> None:
+        """The single action button: Cancel while running, Run otherwise."""
+        if self._worker is not None and self._worker.is_running():
+            self._on_cancel()
+        else:
+            self._on_run()
+
     def _on_run(self) -> None:
         if self._worker is not None and self._worker.is_running():
             return
@@ -458,6 +509,8 @@ class AppWindow(QMainWindow):
             QMessageBox.critical(self, "Configuration error", str(e))
             return
 
+        # No settings can change mid-run, so a pending preview render is moot.
+        self._preview_timer.stop()
         self._set_busy(True)
         self._done_seen = False
         self.progress.setValue(0)
@@ -465,6 +518,14 @@ class AppWindow(QMainWindow):
         self._worker = Worker(recon)
         self._worker.start()
         self._timer.start()
+
+    def _on_cancel(self) -> None:
+        if self._worker is None or not self._worker.is_running():
+            return
+        self._worker.cancel()
+        # Block a second click; _set_busy re-enables on the DoneEvent.
+        self.btn_run.setEnabled(False)
+        self.lbl_status.setText("Cancelling…")
 
     def _drain_events(self) -> None:
         if self._worker is None:
@@ -489,6 +550,8 @@ class AppWindow(QMainWindow):
             if event.error is not None:
                 self.lbl_status.setText("Failed.")
                 QMessageBox.critical(self, "Run failed", str(event.error))
+            elif event.summary is not None and event.summary.cancelled:
+                self._handle_cancelled(event.summary)
             else:
                 s = event.summary
                 assert s is not None
@@ -499,9 +562,51 @@ class AppWindow(QMainWindow):
                 if s.output_dir is not None:
                     self._append_log(f"Output folder: {s.output_dir}")
 
+    def _handle_cancelled(self, summary: RunSummary) -> None:
+        """A cancelled run leaves partial output; let the user keep or delete it."""
+        self.lbl_status.setText("Cancelled.")
+        self._append_log(f"Run cancelled after writing {summary.written} file(s).")
+
+        out = summary.output_dir
+        if out is None or not out.exists():
+            # Cancelled before anything hit disk — nothing to clean up.
+            return
+
+        box = QMessageBox(self)
+        box.setWindowTitle("Run cancelled")
+        box.setText(
+            f"The run was cancelled after writing {summary.written} file(s) to:\n"
+            f"{out}\n\nKeep the files that were already processed?"
+        )
+        keep_btn = box.addButton("Keep files", QMessageBox.ButtonRole.AcceptRole)
+        delete_btn = box.addButton("Delete files", QMessageBox.ButtonRole.DestructiveRole)
+        box.setDefaultButton(keep_btn)
+        box.exec()
+
+        if box.clickedButton() is delete_btn:
+            shutil.rmtree(out, ignore_errors=True)
+            self._append_log(f"Deleted partial output: {out}")
+            self.lbl_status.setText("Cancelled — partial output deleted.")
+        else:
+            self._append_log(f"Kept partial output: {out}")
+            self.lbl_status.setText("Cancelled — partial output kept.")
+
     def _set_busy(self, busy: bool) -> None:
-        self.btn_run.setEnabled(not busy)
+        # Lock + visibly grey the settings; the run button stays live so it can
+        # act as Cancel.
+        self._settings_panel.setEnabled(not busy)
+        self._settings_opacity.setOpacity(0.4 if busy else 1.0)
         self.btn_restart.setEnabled(not busy)
+        self.btn_run.setEnabled(True)
+        self._set_run_button_mode(running=busy)
+
+    def _set_run_button_mode(self, running: bool) -> None:
+        """Swap the action button between Run (primary) and Cancel (danger)."""
+        self.btn_run.setText("Cancel" if running else "Run")
+        self.btn_run.setObjectName("DangerButton" if running else "PrimaryButton")
+        # objectName drives the QSS selector, so re-polish to repaint.
+        self.btn_run.style().unpolish(self.btn_run)
+        self.btn_run.style().polish(self.btn_run)
 
     def _restart(self) -> None:
         """Return to the landing page and forget the loaded export."""

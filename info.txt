@@ -260,5 +260,22 @@ go with Option D.
    resolution, JPEG quality) -- debounced ~1s so dragging a slider fires
    a single render. The preview applies the resolution + JPEG-quality
    knobs so it's a faithful "what you'll get" sample. There is no manual
-   Preview button; Run is the only processing action and still needs an
-   output folder picked.
+   Preview button. The moment a setting changes the strip dims to ~0.3
+   opacity (gui/preview.py PreviewPane.set_pending) so a stale preview
+   reads as "about to change" rather than unchanged; full opacity is
+   restored when the new render lands. Clicking any thumbnail opens it
+   enlarged in a lightbox dialog (fit to screen; closes on click or Esc).
+
+   Running + cancelling (gui/app.py): Run is the processing action and still
+   needs an output folder picked. While a run is in flight the entire
+   settings sidebar is locked and greyed (the editable controls live in one
+   `_settings_panel` that is disabled + dimmed to 0.4 opacity via a
+   QGraphicsOpacityEffect), since changing settings mid-run is meaningless.
+   The single action button toggles Run (primary) <-> Cancel (red
+   `DangerButton`) -- see `_set_run_button_mode`. Cancellation is
+   cooperative: the GUI Worker sets a threading.Event and the pipeline's
+   run() polls `should_cancel` before each post, stopping cleanly and
+   flagging RunSummary.cancelled. A cancelled run leaves partial output on
+   disk; the app then asks whether to keep or delete it (Delete does
+   shutil.rmtree on the per-run export folder -- safe because that folder
+   name is always freshly resolved and unique to the run).

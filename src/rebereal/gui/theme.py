@@ -28,6 +28,11 @@ DARK: dict[str, str] = {
     "accent_hover": "#FFFFFF",
     "accent_pressed": "#E0E0E0",
     "on_accent": "#0D0D0D",
+    # destructive action (Cancel a running job) — the one hue in the palette
+    "danger": "#C8453C",
+    "danger_hover": "#D85A50",
+    "danger_pressed": "#B23B33",
+    "on_danger": "#FFFFFF",
 }
 
 PALETTE = DARK
@@ -93,6 +98,11 @@ QLabel#SectionLabel {{
 QLabel#FieldLabel {{
     color: {p['muted']};
     font-size: 12px;
+}}
+
+QLabel#HintLabel {{
+    color: {p['faint']};
+    font-size: 11px;
 }}
 
 QFrame#Rule {{
@@ -177,6 +187,21 @@ QPushButton#PrimaryButton {{
 QPushButton#PrimaryButton:hover {{ background-color: {p['accent_hover']}; }}
 QPushButton#PrimaryButton:pressed {{ background-color: {p['accent_pressed']}; }}
 QPushButton#PrimaryButton:disabled {{
+    background-color: {p['line']};
+    color: {p['faint']};
+}}
+
+QPushButton#DangerButton {{
+    background-color: {p['danger']};
+    color: {p['on_danger']};
+    border: none;
+    border-radius: 6px;
+    padding: 9px 18px;
+    font-weight: 600;
+}}
+QPushButton#DangerButton:hover {{ background-color: {p['danger_hover']}; }}
+QPushButton#DangerButton:pressed {{ background-color: {p['danger_pressed']}; }}
+QPushButton#DangerButton:disabled {{
     background-color: {p['line']};
     color: {p['faint']};
 }}
@@ -321,6 +346,15 @@ QLabel#ThumbCaption {{
     color: {p['muted']};
     font-family: {mono};
     font-size: 11px;
+}}
+
+QDialog#Lightbox {{
+    background-color: {p['bg']};
+}}
+
+QLabel#LightboxImage {{
+    border: 1px solid {p['line']};
+    background-color: {p['surface']};
 }}
 
 /* --- scrollbars ------------------------------------------------------ */

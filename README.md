@@ -16,10 +16,12 @@ view. This is expected.
 
 ## Install
 
-All work runs inside the `bereal` conda env:
+The recommended setup is a dedicated conda environment, then an editable install
+with the GUI extra:
 
 ```
-conda activate bereal
+conda create -n rebereal python=3.12
+conda activate rebereal
 pip install -e ".[dev,gui]"
 ```
 
@@ -51,7 +53,9 @@ Output quality:
 
 - `--resolution` — output size as a fraction of source, `0.01`–`1.0`; keeps
   aspect ratio (default `1.0` = full source resolution).
-- `--jpeg-quality` — JPEG quality `1`–`100` (default `80`).
+- `--jpeg-quality` — JPEG quality `1`–`100` (default `80`). Higher isn't always
+  visibly better: past ~85 the quality gain is hard to see but the file size
+  keeps climbing.
 
 Both controls are also available in the GUI.
 

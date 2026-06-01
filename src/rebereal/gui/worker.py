@@ -82,6 +82,11 @@ class Worker:
         self.events: queue.Queue[Event] = queue.Queue()
         self._thread: threading.Thread | None = None
         self._log_handler: CallbackHandler | None = None
+        self._cancel = threading.Event()
+
+    def cancel(self) -> None:
+        """Request a cooperative stop; the run ends after the current post."""
+        self._cancel.set()
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -100,7 +105,10 @@ class Worker:
 
     def _run(self) -> None:
         try:
-            summary = self.reconstructor.run(progress_cb=self._on_progress)
+            summary = self.reconstructor.run(
+                progress_cb=self._on_progress,
+                should_cancel=self._cancel.is_set,
+            )
             self.events.put(DoneEvent(summary=summary))
         except BaseException as e:
             log.exception("worker failed")
