@@ -10,9 +10,9 @@ one JPEG per post organised by year.
 The caption is written via XMP `dc:description` and IPTC `Caption-Abstract`
 (the two channels Apple Photos and Google Photos actually read). GPS is
 written as standard EXIF GPS tags and is only present for posts whose
-`posts.json` entry has a `location` field — that's a minority of posts, so
-only some of the imported BeReals will appear on the Photos map / Places
-view. This is expected.
+`posts.json` entry has a `location` field.
+
+![reBeReal landing screen](assets/start-page.webp)
 
 ## Install
 
@@ -41,6 +41,8 @@ change the layout, resolution, or JPEG quality. Pick an **output folder** and
 click **Run** to process the full export. **Restart** returns to the landing
 screen to load a different export.
 
+![reBeReal working UI with automatic previews](assets/main-page.webp)
+
 ### CLI
 
 ```
@@ -48,6 +50,11 @@ python -m rebereal --export ./Data --output ./Output
 ```
 
 Useful flags: `--layout classic`, `--no-gps`, `--no-caption`, `-v`.
+
+`classic` (the BeReal-style back-camera frame with the front-camera inset) is the
+only layout implemented for now. Other variants — side-by-side, separate files per
+post, and classic-plus-originals — are planned and slot into the `layouts/` plugin
+registry without touching the orchestrator.
 
 Output quality:
 
