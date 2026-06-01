@@ -232,6 +232,33 @@ go with Option D.
    interface is styled from a single centralized theme
    (gui/theme.py -> build_stylesheet(PALETTE)): a pure dark-monochrome
    palette, the native system UI font with Menlo for numerals/log, and
-   a two-pane window (settings sidebar + preview/log). The palette is
-   one dict, so light / accent variants drop in without touching widget
-   code. PySide6 is an optional extra: `pip install -e ".[dev,gui]"`.
+   a two-phase window (a landing/drop page, then a settings sidebar +
+   preview/log -- see below). The palette is one dict, so light / accent
+   variants drop in without touching widget code. PySide6 is an optional
+   extra: `pip install -e ".[dev,gui]"`.
+
+   Two-phase flow (gui/app.py uses a QStackedWidget):
+   - Landing page (gui/landing.py): a full-window dashed drop zone with
+     `Choose folder…` / `Choose .zip…` buttons in the bottom corners. You
+     load a BeReal export by dropping a folder OR a `.zip`, or via either
+     button. Zip extraction progress is shown inline on this page.
+   - Working UI: shown only after a source loads -- the settings sidebar +
+     preview/log. No source-picking controls live here; a `Restart` button
+     (next to `Run`) returns to the landing page and forgets the loaded
+     export (and cleans up any extracted temp dir).
+
+   A small headless adapter (src/rebereal/ingest.py) resolves whatever you
+   give it to a real directory containing posts.json: a zip is extracted to
+   a temp dir on a background thread, then the rest of the pipeline runs
+   unchanged against that directory. The temp dir is cleaned up on Restart
+   and when the app closes. ingest.find_export_root tolerates the export
+   sitting one or two folders deep (zips that expand into a wrapper folder,
+   or picking the parent).
+
+   Preview is automatic: it renders as soon as the working UI appears, and
+   re-renders when a setting that affects the output changes (layout,
+   resolution, JPEG quality) -- debounced ~1s so dragging a slider fires
+   a single render. The preview applies the resolution + JPEG-quality
+   knobs so it's a faithful "what you'll get" sample. There is no manual
+   Preview button; Run is the only processing action and still needs an
+   output folder picked.

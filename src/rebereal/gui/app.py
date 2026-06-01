@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 import sys
+import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QFontDatabase
+from PySide6.QtGui import QCloseEvent, QFontDatabase
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -25,14 +26,25 @@ from PySide6.QtWidgets import (
     QSlider,
     QSpinBox,
     QSplitter,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from rebereal.config import Config
+from rebereal.gui.landing import LandingPage
 from rebereal.gui.preview import PreviewPane
 from rebereal.gui.theme import PALETTE, build_stylesheet
-from rebereal.gui.worker import DoneEvent, LogEvent, ProgressEvent, Worker, drain_once
+from rebereal.gui.worker import (
+    DoneEvent,
+    IngestDoneEvent,
+    IngestWorker,
+    LogEvent,
+    ProgressEvent,
+    Worker,
+    drain_once,
+)
+from rebereal.ingest import ExportNotFound
 from rebereal.layouts import LAYOUTS
 from rebereal.logging_setup import configure
 from rebereal.pipeline import build
@@ -65,14 +77,29 @@ def _rule() -> QFrame:
     return rule
 
 
+def _ingest_error_message(error: BaseException) -> str:
+    if isinstance(error, ExportNotFound):
+        return (
+            "No posts.json was found in that folder or .zip. "
+            "Make sure you selected your BeReal data export."
+        )
+    return str(error)
+
+
 class AppWindow(QMainWindow):
     """Main reBeReal window."""
 
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("reBeReal")
-        self.resize(1040, 700)
-        self.setMinimumSize(880, 600)
+        self.resize(1040, 720)
+        self.setMinimumSize(880, 660)
+
+        # Resolved real directory containing posts.json; set by ingest, consumed
+        # by preview + Run. None until a source is loaded.
+        self._export_root: Path | None = None
+        # Scratch dir for an extracted zip; cleaned on re-pick and on close.
+        self._tmp: tempfile.TemporaryDirectory | None = None
 
         self._worker: Worker | None = None
         self._done_seen = False
@@ -80,18 +107,46 @@ class AppWindow(QMainWindow):
         self._timer.setInterval(POLL_INTERVAL_MS)
         self._timer.timeout.connect(self._drain_events)
 
+        self._ingest: IngestWorker | None = None
+        self._ingest_done_seen = False
+        self._ingest_timer = QTimer(self)
+        self._ingest_timer.setInterval(POLL_INTERVAL_MS)
+        self._ingest_timer.timeout.connect(self._drain_ingest)
+
+        # Debounce settings-driven preview refreshes so dragging a slider or
+        # flipping the layout doesn't fire a render on every intermediate value.
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(1000)
+        self._preview_timer.timeout.connect(self._render_preview)
+
         self._build_ui()
 
     # --- ui ---------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        central = QWidget()
-        root = QHBoxLayout(central)
+        # Two phases: the landing/drop screen (index 0) and the working UI
+        # (index 1). A source is loaded on the landing page; on success the
+        # stack swaps to the working UI. Restart swaps back.
+        self._stack = QStackedWidget()
+
+        self.landing = LandingPage()
+        self.landing.sourceDropped.connect(self._start_ingest)
+        self.landing.folderRequested.connect(self._pick_folder)
+        self.landing.zipRequested.connect(self._pick_zip)
+        self._stack.addWidget(self.landing)
+
+        self._stack.addWidget(self._build_main_page())
+        self.setCentralWidget(self._stack)
+
+    def _build_main_page(self) -> QWidget:
+        page = QWidget()
+        root = QHBoxLayout(page)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
         root.addWidget(self._build_sidebar())
         root.addWidget(self._build_content(), 1)
-        self.setCentralWidget(central)
+        return page
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QFrame()
@@ -99,26 +154,33 @@ class AppWindow(QMainWindow):
         sidebar.setFixedWidth(360)
 
         col = QVBoxLayout(sidebar)
-        col.setContentsMargins(24, 24, 24, 24)
-        col.setSpacing(16)
+        col.setContentsMargins(24, 18, 24, 20)
+        col.setSpacing(12)
 
+        # Compact title — just the wordmark, so the fields below get the room.
         wordmark = QLabel("rebereal")
         wordmark.setObjectName("Wordmark")
-        tagline = QLabel("Rebuild your BeReals as importable photos.")
-        tagline.setObjectName("Tagline")
-        tagline.setWordWrap(True)
         col.addWidget(wordmark)
-        col.addWidget(tagline)
         col.addWidget(_rule())
 
-        # Folders ----------------------------------------------------------
-        col.addWidget(_section_label("Folders"))
-        self.in_export = QLineEdit()
-        self.in_export.setPlaceholderText("BeReal export folder")
-        col.addLayout(self._folder_row("Export", self.in_export, self._pick_export))
+        # Source -----------------------------------------------------------
+        # Read-only: the loaded export is chosen on the landing page. To pick a
+        # different one the user hits Restart (below).
+        col.addWidget(_section_label("Source"))
+        self.in_source = QLineEdit()
+        self.in_source.setPlaceholderText("No export loaded")
+        self.in_source.setReadOnly(True)
+        source_box = QVBoxLayout()
+        source_box.setSpacing(4)
+        source_box.addWidget(_field_label("BeReal export"))
+        source_box.addWidget(self.in_source)
+        col.addLayout(source_box)
+
+        # Output -----------------------------------------------------------
+        col.addWidget(_section_label("Output"))
         self.in_output = QLineEdit()
         self.in_output.setPlaceholderText("Output folder")
-        col.addLayout(self._folder_row("Output", self.in_output, self._pick_output))
+        col.addLayout(self._folder_row("Folder", self.in_output, self._pick_output))
 
         # Composition ------------------------------------------------------
         col.addWidget(_section_label("Composition"))
@@ -128,6 +190,7 @@ class AppWindow(QMainWindow):
         self.cb_layout = QComboBox()
         self.cb_layout.addItems(sorted(LAYOUTS.keys()))
         self.cb_layout.setCurrentText("classic")
+        self.cb_layout.currentTextChanged.connect(lambda *_: self._schedule_preview())
         comp.addWidget(self.cb_layout)
         col.addLayout(comp)
 
@@ -137,8 +200,12 @@ class AppWindow(QMainWindow):
         self.chk_gps.setChecked(True)
         self.chk_caption = QCheckBox("Embed caption")
         self.chk_caption.setChecked(True)
-        col.addWidget(self.chk_gps)
-        col.addWidget(self.chk_caption)
+        meta = QHBoxLayout()
+        meta.setSpacing(16)
+        meta.addWidget(self.chk_gps)
+        meta.addWidget(self.chk_caption)
+        meta.addStretch(1)
+        col.addLayout(meta)
 
         # Quality ----------------------------------------------------------
         col.addWidget(_section_label("Quality"))
@@ -150,13 +217,13 @@ class AppWindow(QMainWindow):
 
         actions = QHBoxLayout()
         actions.setSpacing(8)
-        self.btn_preview = QPushButton("Preview")
-        self.btn_preview.setObjectName("GhostButton")
-        self.btn_preview.clicked.connect(self._on_preview)
+        self.btn_restart = QPushButton("Restart")
+        self.btn_restart.setObjectName("GhostButton")
+        self.btn_restart.clicked.connect(self._restart)
         self.btn_run = QPushButton("Run")
         self.btn_run.setObjectName("PrimaryButton")
         self.btn_run.clicked.connect(self._on_run)
-        actions.addWidget(self.btn_preview)
+        actions.addWidget(self.btn_restart)
         actions.addWidget(self.btn_run, 1)
         col.addLayout(actions)
 
@@ -194,6 +261,7 @@ class AppWindow(QMainWindow):
         self.sld_resolution.valueChanged.connect(
             lambda v: self.lbl_resolution.setText(f"{v / 100:.2f}")
         )
+        self.sld_resolution.valueChanged.connect(lambda *_: self._schedule_preview())
         box.addWidget(self.sld_resolution)
         return box
 
@@ -204,6 +272,7 @@ class AppWindow(QMainWindow):
         self.spn_quality = QSpinBox()
         self.spn_quality.setRange(1, 100)
         self.spn_quality.setValue(80)
+        self.spn_quality.valueChanged.connect(lambda *_: self._schedule_preview())
         box.addWidget(self.spn_quality)
         return box
 
@@ -255,27 +324,101 @@ class AppWindow(QMainWindow):
 
     # --- callbacks --------------------------------------------------------
 
-    def _pick_export(self) -> None:
+    def _pick_folder(self) -> None:
         d = QFileDialog.getExistingDirectory(self, "Select BeReal export folder")
         if d:
-            self.in_export.setText(d)
+            self._start_ingest(Path(d))
+
+    def _pick_zip(self) -> None:
+        f, _ = QFileDialog.getOpenFileName(
+            self, "Select BeReal export .zip", "", "Zip archives (*.zip)"
+        )
+        if f:
+            self._start_ingest(Path(f))
 
     def _pick_output(self) -> None:
         d = QFileDialog.getExistingDirectory(self, "Select output folder")
         if d:
             self.in_output.setText(d)
 
-    def _make_config(self) -> Config | None:
-        export = self.in_export.text().strip()
-        output = self.in_output.text().strip()
-        if not export or not output:
-            QMessageBox.critical(
-                self, "Missing folders", "Please choose both an export and an output folder."
+    # --- ingest -----------------------------------------------------------
+
+    def _start_ingest(self, selected: Path) -> None:
+        if (self._ingest is not None and self._ingest.is_running()) or (
+            self._worker is not None and self._worker.is_running()
+        ):
+            return
+        selected = selected.expanduser()
+        self.in_source.setText(str(selected))
+        # Fresh scratch dir per ingest so a re-pick never mingles with a prior
+        # extraction. Always created; for a folder source it stays empty.
+        self._reset_tmp()
+        assert self._tmp is not None
+        # Ingest runs on the landing page, so progress/status show there.
+        self.landing.set_busy(True)
+        self.landing.begin_progress("Reading export…")
+        self._ingest_done_seen = False
+        self._ingest = IngestWorker(selected, Path(self._tmp.name))
+        self._ingest.start()
+        self._ingest_timer.start()
+
+    def _drain_ingest(self) -> None:
+        if self._ingest is None:
+            return
+        if drain_once(self._ingest.events, self._handle_ingest_event, (IngestDoneEvent,)):
+            self._ingest_done_seen = True
+        if self._ingest_done_seen:
+            self._ingest_timer.stop()
+
+    def _handle_ingest_event(self, event: object) -> None:
+        if isinstance(event, ProgressEvent):
+            pct = int(event.done / event.total * 100) if event.total else 0
+            self.landing.set_progress(pct, f"Extracting {event.done} / {event.total}")
+        elif isinstance(event, IngestDoneEvent):
+            if event.error is not None:
+                self._export_root = None
+                self.in_source.clear()
+                self.landing.show_error(_ingest_error_message(event.error))
+                return
+            self._export_root = event.export_root
+            self.landing.reset()
+            # Swap to the working UI now that an export is loaded.
+            self._stack.setCurrentIndex(1)
+            self.lbl_status.setText("Export loaded.")
+            self._append_log(f"Loaded export: {event.export_root}")
+            self._render_preview()
+
+    # --- preview ----------------------------------------------------------
+
+    def _schedule_preview(self) -> None:
+        """Debounced refresh — only once a source is loaded."""
+        if self._export_root is not None:
+            self._preview_timer.start()
+
+    def _render_preview(self) -> None:
+        if self._export_root is None:
+            return
+        config = self._preview_config()
+        try:
+            recon = build(config)
+            self.preview_pane.render(
+                recon,
+                n=3,
+                scale=config.resolution_scale,
+                jpeg_quality=config.jpeg_quality,
             )
-            return None
+            self._append_log("Preview rendered.")
+        except Exception as e:
+            log.exception("preview failed")
+            QMessageBox.critical(self, "Preview failed", str(e))
+
+    def _preview_config(self) -> Config:
+        # Preview never resolves or writes output, so output_root is unused on
+        # this path; reuse export_root as a harmless placeholder.
+        assert self._export_root is not None
         return Config(
-            export_root=Path(export).expanduser().resolve(),
-            output_root=Path(output).expanduser().resolve(),
+            export_root=self._export_root,
+            output_root=self._export_root,
             layout=self.cb_layout.currentText(),
             embed_gps=self.chk_gps.isChecked(),
             embed_caption=self.chk_caption.isChecked(),
@@ -283,17 +426,25 @@ class AppWindow(QMainWindow):
             jpeg_quality=self.spn_quality.value(),
         )
 
-    def _on_preview(self) -> None:
-        config = self._make_config()
-        if config is None:
-            return
-        try:
-            recon = build(config)
-            self.preview_pane.render(recon, n=3)
-            self._append_log("Preview rendered.")
-        except Exception as e:
-            log.exception("preview failed")
-            QMessageBox.critical(self, "Preview failed", str(e))
+    def _make_config(self) -> Config | None:
+        if self._export_root is None:
+            QMessageBox.critical(
+                self, "No export loaded", "Load a BeReal export (folder or .zip) first."
+            )
+            return None
+        output = self.in_output.text().strip()
+        if not output:
+            QMessageBox.critical(self, "Missing output folder", "Please choose an output folder.")
+            return None
+        return Config(
+            export_root=self._export_root,
+            output_root=Path(output).expanduser().resolve(),
+            layout=self.cb_layout.currentText(),
+            embed_gps=self.chk_gps.isChecked(),
+            embed_caption=self.chk_caption.isChecked(),
+            resolution_scale=round(self.sld_resolution.value() / 100, 2),
+            jpeg_quality=self.spn_quality.value(),
+        )
 
     def _on_run(self) -> None:
         if self._worker is not None and self._worker.is_running():
@@ -349,11 +500,39 @@ class AppWindow(QMainWindow):
                     self._append_log(f"Output folder: {s.output_dir}")
 
     def _set_busy(self, busy: bool) -> None:
-        self.btn_preview.setEnabled(not busy)
         self.btn_run.setEnabled(not busy)
+        self.btn_restart.setEnabled(not busy)
+
+    def _restart(self) -> None:
+        """Return to the landing page and forget the loaded export."""
+        if self._worker is not None and self._worker.is_running():
+            return
+        if self._tmp is not None:
+            self._tmp.cleanup()
+            self._tmp = None
+        self._export_root = None
+        self._preview_timer.stop()
+        self.in_source.clear()
+        self.in_output.clear()
+        self.log_view.clear()
+        self.progress.setValue(0)
+        self.lbl_status.setText("Idle.")
+        self.landing.reset()
+        self._stack.setCurrentIndex(0)
 
     def _append_log(self, message: str) -> None:
         self.log_view.appendPlainText(message)
+
+    def _reset_tmp(self) -> None:
+        if self._tmp is not None:
+            self._tmp.cleanup()
+        self._tmp = tempfile.TemporaryDirectory(prefix="rebereal-")
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 (Qt override)
+        if self._tmp is not None:
+            self._tmp.cleanup()
+            self._tmp = None
+        super().closeEvent(event)
 
 
 def main() -> int:

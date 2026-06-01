@@ -31,8 +31,13 @@ pip install -e ".[dev,gui]"
 python main.py
 ```
 
-Pick the export folder and an output folder, click **Preview** to render three
-sample composites, then **Run** to process the full export.
+The app opens on a landing screen: drop your BeReal export **folder or `.zip`**
+onto the drop zone (or use **Choose folder… / Choose .zip…**). A zip is
+extracted in the background with a progress bar. Once it loads, the working UI
+appears and three sample composites preview automatically, re-rendering when you
+change the layout, resolution, or JPEG quality. Pick an **output folder** and
+click **Run** to process the full export. **Restart** returns to the landing
+screen to load a different export.
 
 ### CLI
 

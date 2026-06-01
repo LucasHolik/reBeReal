@@ -11,6 +11,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
+from rebereal.media import scale_image
+
 if TYPE_CHECKING:
     from rebereal.pipeline import Reconstructor
 
@@ -28,9 +30,21 @@ class PreviewPane(QWidget):
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(12)
         self._layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        self._show_placeholder("No preview yet. Click Preview to render samples.")
+        self._show_placeholder("Rendering preview…")
 
-    def render(self, reconstructor: "Reconstructor", n: int = 3) -> None:
+    def render(
+        self,
+        reconstructor: "Reconstructor",
+        n: int = 3,
+        scale: float = 1.0,
+        jpeg_quality: int = 80,
+    ) -> None:
+        """Render the first `n` composites, reflecting `scale` and `jpeg_quality`.
+
+        Applying the resolution/quality knobs here (not just at Run) keeps the
+        preview a faithful "what you'll get" sample, so the sidebar controls
+        visibly affect it.
+        """
         self._clear()
 
         items = reconstructor.preview(n=n)
@@ -40,7 +54,8 @@ class PreviewPane(QWidget):
 
         for item in items:
             for composed in item.images:
-                pixmap = _pil_to_pixmap(_thumbnail(composed.image, THUMB_SIZE))
+                sample = _apply_output_quality(composed.image, scale, jpeg_quality)
+                pixmap = _pil_to_pixmap(_thumbnail(sample, THUMB_SIZE))
                 self._layout.addWidget(_thumb_cell(pixmap, item.post.taken_at.strftime("%Y-%m-%d %H:%M")))
         self._layout.addStretch(1)
 
@@ -59,6 +74,15 @@ class PreviewPane(QWidget):
         placeholder.setObjectName("Placeholder")
         self._layout.addWidget(placeholder)
         self._layout.addStretch(1)
+
+
+def _apply_output_quality(image: Image.Image, scale: float, jpeg_quality: int) -> Image.Image:
+    """Mirror the Run pipeline's resolution + JPEG steps for a faithful preview."""
+    sample = scale_image(image, scale).convert("RGB")
+    buffer = io.BytesIO()
+    sample.save(buffer, format="JPEG", quality=jpeg_quality, optimize=True)
+    buffer.seek(0)
+    return Image.open(buffer)
 
 
 def _thumb_cell(pixmap: QPixmap, caption: str) -> QWidget:

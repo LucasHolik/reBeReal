@@ -273,6 +273,39 @@ QPlainTextEdit#LogView {{
     padding: 8px;
 }}
 
+/* --- landing / drop zone --------------------------------------------- */
+
+QLabel#LandingWordmark {{
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+}}
+
+QFrame#DropZone {{
+    background-color: {p['surface']};
+    border: 2px dashed {p['line_strong']};
+    border-radius: 14px;
+}}
+QFrame#DropZone[dragActive="true"] {{
+    border: 2px dashed {p['text']};
+}}
+
+/* Labels inside the drop zone stay transparent so the zone's surface shows
+   through (the broad QWidget rule would otherwise paint them the canvas bg). */
+QLabel#DropHint {{
+    color: {p['muted']};
+    font-size: 19px;
+    background-color: transparent;
+}}
+QLabel#DropSubhint {{
+    color: {p['faint']};
+    font-size: 13px;
+    background-color: transparent;
+}}
+QFrame#DropZone QLabel#StatusLabel {{
+    background-color: transparent;
+}}
+
 /* --- preview --------------------------------------------------------- */
 
 QLabel#Placeholder {{
