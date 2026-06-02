@@ -51,10 +51,16 @@ python -m rebereal --export ./Data --output ./Output
 
 Useful flags: `--layout classic`, `--no-gps`, `--no-caption`, `-v`.
 
-`classic` (the BeReal-style back-camera frame with the front-camera inset) is the
-only layout implemented for now. Other variants — side-by-side, separate files per
-post, and classic-plus-originals — are planned and slot into the `layouts/` plugin
-registry without touching the orchestrator.
+Three layouts are implemented (pass the key to `--layout` or pick it in the GUI):
+
+- `classic` — the BeReal-style back-camera frame with the front-camera inset.
+- `inverted_classic` — the front camera fills the frame with the back camera as
+  the inset.
+- `side_by_side` — both cameras at equal size, stitched horizontally (back | front).
+
+The remaining variants — separate files per post and classic-plus-originals — are
+planned and slot into the `layouts/` plugin registry without touching the
+orchestrator.
 
 Output quality:
 
@@ -80,3 +86,7 @@ pytest -q
 
 Strategy plugins live under `layouts/`, `parsers/`, `metadata/`, and `naming/`;
 new variants drop in without touching the orchestrator.
+
+## License
+
+[MIT](LICENSE) © Lucas Holik

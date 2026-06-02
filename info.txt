@@ -190,8 +190,12 @@ go with Option D.
 4. DECISIONS MADE (v1 — see README + src/rebereal/)
 ----------------------------------------------------------------
 
-1. Layout: A (classic). B / C / D are architected for via the
-   layouts/ plugin registry but not yet implemented.
+1. Layout: A (classic, default), plus "inverted classic" (front fills
+   the frame, back is the inset) and B (side by side, horizontal) are
+   implemented via the layouts/ plugin registry. C / D (separate files /
+   classic-plus-originals) are architected for but not yet implemented.
+   Each layout exposes a registry key (classic / inverted_classic /
+   side_by_side) for --layout and a display label for the GUI dropdown.
 2. Output folder: each run is wrapped in a fresh folder named
    `export` (or `export(1)`, `export(2)`, ... if `export` already
    exists in the chosen output location), resolved once per run by

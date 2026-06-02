@@ -47,7 +47,7 @@ from rebereal.gui.worker import (
     drain_once,
 )
 from rebereal.ingest import ExportNotFound
-from rebereal.layouts import LAYOUTS
+from rebereal.layouts import layout_labels
 from rebereal.logging_setup import configure
 from rebereal.pipeline import RunSummary, build
 
@@ -230,9 +230,11 @@ class AppWindow(QMainWindow):
         comp.setSpacing(4)
         comp.addWidget(_field_label("Layout"))
         self.cb_layout = QComboBox()
-        self.cb_layout.addItems(sorted(LAYOUTS.keys()))
-        self.cb_layout.setCurrentText("classic")
-        self.cb_layout.currentTextChanged.connect(lambda *_: self._schedule_preview())
+        for key, label in layout_labels().items():
+            # Show the friendly label; carry the registry key as item data.
+            self.cb_layout.addItem(label, key)
+        self.cb_layout.setCurrentIndex(max(0, self.cb_layout.findData("classic")))
+        self.cb_layout.currentIndexChanged.connect(lambda *_: self._schedule_preview())
         comp.addWidget(self.cb_layout)
         col.addLayout(comp)
 
@@ -463,7 +465,7 @@ class AppWindow(QMainWindow):
         return Config(
             export_root=self._export_root,
             output_root=self._export_root,
-            layout=self.cb_layout.currentText(),
+            layout=self.cb_layout.currentData(),
             embed_gps=self.chk_gps.isChecked(),
             embed_caption=self.chk_caption.isChecked(),
             resolution_scale=round(self.sld_resolution.value() / 100, 2),
@@ -483,7 +485,7 @@ class AppWindow(QMainWindow):
         return Config(
             export_root=self._export_root,
             output_root=Path(output).expanduser().resolve(),
-            layout=self.cb_layout.currentText(),
+            layout=self.cb_layout.currentData(),
             embed_gps=self.chk_gps.isChecked(),
             embed_caption=self.chk_caption.isChecked(),
             resolution_scale=round(self.sld_resolution.value() / 100, 2),

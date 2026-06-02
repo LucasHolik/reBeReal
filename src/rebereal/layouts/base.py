@@ -24,5 +24,6 @@ class Layout(Protocol):
     """Composes the two source frames into one or more output images."""
 
     name: str
+    label: str
 
     def compose(self, back: Image.Image, front: Image.Image) -> list[ComposedImage]: ...

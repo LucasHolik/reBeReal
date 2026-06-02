@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from rebereal.config import Config
+from rebereal.layouts import LAYOUTS
 from rebereal.logging_setup import configure
 from rebereal.pipeline import build
 
@@ -21,7 +22,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--export", type=Path, required=True, help="Path to the BeReal export root")
     p.add_argument("--output", type=Path, required=True, help="Output directory for composites")
-    p.add_argument("--layout", default="classic", help="Layout strategy name (default: classic)")
+    p.add_argument(
+        "--layout",
+        default="classic",
+        help=f"Layout strategy name, one of: {', '.join(sorted(LAYOUTS))} (default: classic)",
+    )
     p.add_argument("--naming", default="by_year", help="Naming strategy name (default: by_year)")
     p.add_argument("--jpeg-quality", type=int, default=80, help="JPEG quality 1-100 (default: 80)")
     p.add_argument(
