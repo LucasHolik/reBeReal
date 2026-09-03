@@ -14,6 +14,47 @@ written as standard EXIF GPS tags and is only present for posts whose
 
 ![reBeReal landing screen](assets/start-page.webp)
 
+## Getting your export
+
+reBeReal never talks to BeReal — it only reads an export you already hold. If
+you don't have one yet, BeReal will send you one free of charge under your GDPR
+right of access. In the app: tap your profile picture, then the gear icon, then
+**Help** (under *About*), and pick the topic **"I'd like to request a copy of my
+data"**. The reply arrives in the same in-app help thread with a download link;
+turnaround is typically hours to a couple of days, though BeReal have up to 30
+days to comply. Emailing contact@bere.al is the documented fallback if your
+build of the app offers no such topic. Ask for it first — the wait is the slow
+part of this.
+
+The link gives you a `.zip`. Out of everything in it, reBeReal reads three
+things:
+
+```
+<export>/
+├── posts.json          ← the only metadata file reBeReal reads
+└── Photos/
+    ├── bereal/         ← BeReals posted before 2022-11-25
+    └── post/           ← BeReals posted from 2022-11-25 on
+```
+
+Everything else — `memories.json`, `conversations/`, `Photos/realmoji/`, the
+account metadata — is ignored; leave it in place. If BeReal send more than one
+file, the one you want is the archive containing `posts.json`.
+
+- **GUI**: hand it the `.zip` directly (it extracts it for you) or the unzipped
+  folder. Either may sit up to two levels deep inside a wrapper folder — the
+  export root is found for you.
+- **CLI**: unzip first. `--export` must point at the folder that *directly*
+  contains `posts.json`.
+
+Nothing is uploaded and nothing phones home: the export is read from disk, the
+composites go to the output folder you pick, and that is the whole of it.
+
+[`EXPORT_FORMAT.md`](EXPORT_FORMAT.md) documents the export in full — every file,
+every field. The parser targets the format as shipped on 2026-05-18; BeReal do
+not document it and may change it, so an export in a different shape may not
+parse.
+
 ## Install
 
 The recommended setup is a dedicated conda environment, then an editable install
