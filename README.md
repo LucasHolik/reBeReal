@@ -16,18 +16,33 @@ written as standard EXIF GPS tags and is only present for posts whose
 
 ## Getting your export
 
-reBeReal never talks to BeReal — it only reads an export you already hold. If
-you don't have one yet, BeReal will send you one free of charge under your GDPR
-right of access. In the app: tap your profile picture, then the gear icon, then
-**Help** (under *About*), and pick the topic **"I'd like to request a copy of my
-data"**. The reply arrives in the same in-app help thread with a download link;
-turnaround is typically hours to a couple of days, though BeReal have up to 30
-days to comply. Emailing contact@bere.al is the documented fallback if your
-build of the app offers no such topic. Ask for it first — the wait is the slow
-part of this.
+reBeReal never talks to BeReal — it only reads an export you already hold.
+BeReal has no self-serve "download my data" button, so getting one means making
+a formal request. Two routes, both free under your GDPR right of access:
 
-The link gives you a `.zip`. Out of everything in it, reBeReal reads three
-things:
+**In the app** — usually the faster one:
+
+1. Tap your profile picture (bottom right), then the gear icon for **Settings**.
+2. Scroll to the **About** section and tap **Help**.
+3. Tap **Select Topic** and choose the option about requesting a copy of your
+   data. If it isn't listed, go **Contact us → Ask a Question →
+   Troubleshooting → Other → Still need help?** instead.
+4. State that you are making a subject access request under GDPR Articles 15
+   and 20, and ask for all personal data — photos and associated metadata
+   included — in a machine-readable format.
+
+**By email** — write to BeReal's Data Protection Team at dpo@bere.al. They do
+not always hold your email address, so expect to be asked to prove the request
+is yours: have your username, phone number (with country code) and date of
+birth to hand.
+
+BeReal have 30 days to respond; in practice the file tends to come back within a
+couple of days. Ask for it first — the wait is the slow part of this.
+
+What arrives is a `.zip` of your photos as WebP (bar some JPEGs in the earliest
+folder), none of them carrying any embedded metadata; the dates and locations
+sit in a separate JSON file. Putting the two back together
+is what reBeReal is for. Out of everything in the archive it reads three things:
 
 ```
 <export>/
@@ -38,8 +53,7 @@ things:
 ```
 
 Everything else — `memories.json`, `conversations/`, `Photos/realmoji/`, the
-account metadata — is ignored; leave it in place. If BeReal send more than one
-file, the one you want is the archive containing `posts.json`.
+account metadata — is ignored; leave it in place.
 
 - **GUI**: hand it the `.zip` directly (it extracts it for you) or the unzipped
   folder. Either may sit up to two levels deep inside a wrapper folder — the
