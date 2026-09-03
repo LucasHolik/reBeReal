@@ -14,6 +14,61 @@ written as standard EXIF GPS tags and is only present for posts whose
 
 ![reBeReal landing screen](assets/start-page.webp)
 
+## Getting your export
+
+reBeReal never talks to BeReal — it only reads an export you already hold.
+BeReal has no self-serve "download my data" button, so getting one means making
+a formal request. Two routes, both free under your GDPR right of access:
+
+**In the app** — usually the faster one:
+
+1. Tap your profile picture (bottom right), then the gear icon for **Settings**.
+2. Scroll to the **About** section and tap **Help**.
+3. Tap **Select Topic** and choose the option about requesting a copy of your
+   data. If it isn't listed, go **Contact us → Ask a Question →
+   Troubleshooting → Other → Still need help?** instead.
+4. State that you are making a subject access request under GDPR Articles 15
+   and 20, and ask for all personal data — photos and associated metadata
+   included — in a machine-readable format.
+
+**By email** — write to BeReal's Data Protection Team at dpo@bere.al. They do
+not always hold your email address, so expect to be asked to prove the request
+is yours: have your username, phone number (with country code) and date of
+birth to hand.
+
+BeReal have 30 days to respond; in practice the file tends to come back within a
+couple of days. Ask for it before you do anything else here — the wait is the
+slow part.
+
+What arrives is a `.zip` of bare photos — WebP, bar some JPEGs in the earliest
+folder — with the dates and locations in a separate JSON file. Out of everything
+in the archive, reBeReal reads three things:
+
+```
+<export>/
+├── posts.json          ← timestamps, captions, locations
+└── Photos/
+    ├── bereal/         ← BeReals posted before 2022-11-25
+    └── post/           ← BeReals posted from 2022-11-25 on
+```
+
+Everything else — `memories.json`, `conversations/`, `Photos/realmoji/`, the
+account metadata — is ignored; leave it in place.
+
+- **GUI**: hand it the `.zip` directly (it extracts it for you) or the unzipped
+  folder. Either may sit up to two levels deep inside a wrapper folder — the
+  export root is found for you.
+- **CLI**: unzip first. `--export` must point at the folder that *directly*
+  contains `posts.json`.
+
+Nothing is uploaded: reBeReal reads the export from disk and writes to the
+folder you pick.
+
+[`EXPORT_FORMAT.md`](EXPORT_FORMAT.md) documents the export in full — every file,
+every field. The parser targets the format as shipped on 2026-05-18; BeReal do
+not document it and may change it, so an export in a different shape may not
+parse.
+
 ## Install
 
 The recommended setup is a dedicated conda environment, then an editable install
