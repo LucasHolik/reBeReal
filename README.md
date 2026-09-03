@@ -37,16 +37,16 @@ is yours: have your username, phone number (with country code) and date of
 birth to hand.
 
 BeReal have 30 days to respond; in practice the file tends to come back within a
-couple of days. Ask for it first — the wait is the slow part of this.
+couple of days. Ask for it before you do anything else here — the wait is the
+slow part.
 
-What arrives is a `.zip` of your photos as WebP (bar some JPEGs in the earliest
-folder), none of them carrying any embedded metadata; the dates and locations
-sit in a separate JSON file. Putting the two back together
-is what reBeReal is for. Out of everything in the archive it reads three things:
+What arrives is a `.zip` of bare photos — WebP, bar some JPEGs in the earliest
+folder — with the dates and locations in a separate JSON file. Out of everything
+in the archive, reBeReal reads three things:
 
 ```
 <export>/
-├── posts.json          ← the only metadata file reBeReal reads
+├── posts.json          ← timestamps, captions, locations
 └── Photos/
     ├── bereal/         ← BeReals posted before 2022-11-25
     └── post/           ← BeReals posted from 2022-11-25 on
@@ -61,8 +61,8 @@ account metadata — is ignored; leave it in place.
 - **CLI**: unzip first. `--export` must point at the folder that *directly*
   contains `posts.json`.
 
-Nothing is uploaded and nothing phones home: the export is read from disk, the
-composites go to the output folder you pick, and that is the whole of it.
+Nothing is uploaded: reBeReal reads the export from disk and writes to the
+folder you pick.
 
 [`EXPORT_FORMAT.md`](EXPORT_FORMAT.md) documents the export in full — every file,
 every field. The parser targets the format as shipped on 2026-05-18; BeReal do
